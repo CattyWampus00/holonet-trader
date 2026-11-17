@@ -1,0 +1,202 @@
+/*
+  Theme tokens. Every color in the app comes from these variables.
+  To add a theme: add a [data-theme="id"] block below and an entry in src/shared/themes.ts.
+*/
+:root, [data-theme="holonet"] {
+  --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --line: #2a2f3a; --row-hover: #1b1f27;
+  --text: #e6e8ee; --muted: #8b93a4;
+  --accent: #f5b942; --accent-ink: #1a1405;
+  --good: #4cc38a; --warn: #f5b942; --bad: #ef6b6b;
+  --chart-bar: #f5b942; --scrim: #000a;
+  --r: 10px; --r-sm: 7px; --r-pill: 10px;
+  /* personality tokens: heading font/case/spacing, card and button effects */
+  --font-head: inherit; --h-case: none; --h-track: .02em; --card-fx: none; --btn-fx: none;
+  color-scheme: dark;
+}
+[data-theme="imperial"] {
+  /* Stark and military: neutral black, crimson accent, sharp square corners. "Out" is a hot pink-red so it stays distinct from the crimson accent (pills also carry text). */
+  --bg: #080809; --panel: #111113; --panel2: #1a1a1d; --line: #303036; --row-hover: #161618;
+  --text: #ececee; --muted: #9a9aa3;
+  --accent: #d32f2f; --accent-ink: #ffffff;
+  --good: #5fc79a; --warn: #e0a030; --bad: #ff6b8a;
+  --chart-bar: #d32f2f; --scrim: #000c;
+  --r: 0px; --r-sm: 2px; --r-pill: 2px;
+  --h-case: uppercase; --h-track: .14em; --card-fx: inset 0 2px 0 var(--accent);
+  color-scheme: dark;
+}
+[data-theme="rebel"] {
+  /* Utilitarian and worn: warm browns, orange, industrial condensed headings, a bold edge bar on cards. */
+  --bg: #14110e; --panel: #1d1915; --panel2: #26211b; --line: #3a3229; --row-hover: #231e18;
+  --text: #f0e8dc; --muted: #a39785;
+  --accent: #ee7d2b; --accent-ink: #1a0e03;
+  --good: #8cc16a; --warn: #f2c14e; --bad: #e5584a;
+  --chart-bar: #ee7d2b; --scrim: #000a;
+  --r: 4px; --r-sm: 3px; --r-pill: 3px;
+  --font-head: Bahnschrift, "Arial Narrow", "Segoe UI", sans-serif; --h-case: uppercase; --h-track: .08em;
+  --card-fx: inset 4px 0 0 var(--accent);
+  color-scheme: dark;
+}
+[data-theme="jedi"] {
+  /* Calm and elegant: deep blue, very round shapes, serif headings, a soft blue glow. */
+  --bg: #0b1220; --panel: #121b2e; --panel2: #19243a; --line: #2a3a58; --row-hover: #15203a;
+  --text: #e4ecf8; --muted: #8aa0c0;
+  --accent: #5ab0ff; --accent-ink: #04121f;
+  --good: #4cd0a0; --warn: #f0c05a; --bad: #ef6b7b;
+  --chart-bar: #5ab0ff; --scrim: #000a;
+  --r: 18px; --r-sm: 12px; --r-pill: 999px;
+  --font-head: Georgia, "Times New Roman", serif; --h-track: .03em;
+  --card-fx: 0 6px 28px color-mix(in srgb, var(--accent) 10%, transparent);
+  --btn-fx: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
+  color-scheme: dark;
+}
+[data-theme="sith"] {
+  /* Ominous: blood-tinted black, serif uppercase headings, a red glow. Bright red accent with dark text so it passes contrast. */
+  --bg: #0c0506; --panel: #160a0b; --panel2: #1f1012; --line: #3a1a1d; --row-hover: #1a0c0e;
+  --text: #f1e6e6; --muted: #b39a9c;
+  --accent: #ff4a4a; --accent-ink: #170000;
+  --good: #5fc79a; --warn: #e8a43a; --bad: #ff9aa8;
+  --chart-bar: #ff4a4a; --scrim: #000d;
+  --r: 2px; --r-sm: 2px; --r-pill: 2px;
+  --font-head: Georgia, "Times New Roman", serif; --h-case: uppercase; --h-track: .18em;
+  --card-fx: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent), 0 0 26px color-mix(in srgb, var(--accent) 12%, transparent);
+  --btn-fx: 0 0 16px color-mix(in srgb, var(--accent) 50%, transparent);
+  color-scheme: dark;
+}
+[data-theme="hutt"] {
+  /* Underworld luxury: murky green, brass, chunky round shapes, ornate serif headings, a brass bar under cards. */
+  --bg: #0e110b; --panel: #171b11; --panel2: #20251a; --line: #38402b; --row-hover: #1b2014;
+  --text: #ece8d2; --muted: #a8a88c;
+  --accent: #c9a227; --accent-ink: #1b1500;
+  --good: #8fd16a; --warn: #e8a33a; --bad: #e2604d;
+  --chart-bar: #c9a227; --scrim: #000b;
+  --r: 14px; --r-sm: 10px; --r-pill: 999px;
+  --font-head: "Palatino Linotype", "Book Antiqua", Palatino, serif; --h-track: .04em;
+  --card-fx: inset 0 -3px 0 color-mix(in srgb, var(--accent) 70%, transparent);
+  color-scheme: dark;
+}
+[data-theme="bounty-hunter"] {
+  /* Tactical: gunmetal, hazard yellow, monospace uppercase headings, thin outlined cards. */
+  --bg: #0f1113; --panel: #181b1e; --panel2: #212529; --line: #363b40; --row-hover: #1c2024;
+  --text: #e8eaec; --muted: #98a1a9;
+  --accent: #ffe600; --accent-ink: #141000;
+  --good: #5fd0a0; --warn: #ff9f1c; --bad: #ff5d5d;
+  --chart-bar: #ffe600; --scrim: #000b;
+  --r: 3px; --r-sm: 2px; --r-pill: 2px;
+  --font-head: Consolas, "Cascadia Mono", "Courier New", monospace; --h-case: uppercase; --h-track: .1em;
+  --card-fx: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+  color-scheme: dark;
+}
+[data-theme="mos-eisley"] {
+  /* Light and sun-baked: sand tones, serif headings, soft paper-like shadows. */
+  --bg: #f3ead8; --panel: #fbf5e8; --panel2: #efe4cc; --line: #d8c9a8; --row-hover: #f1e8d3;
+  --text: #2b2418; --muted: #75684f;
+  --accent: #a85a14; --accent-ink: #ffffff;
+  --good: #2f7d4f; --warn: #94600a; --bad: #b3362b;
+  --chart-bar: #a85a14; --scrim: #2b241866;
+  --r: 6px; --r-sm: 4px; --r-pill: 6px;
+  --font-head: Georgia, "Times New Roman", serif;
+  --card-fx: 0 1px 2px #2b241822, 0 3px 10px #2b241814;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+.app { display: grid; grid-template-columns: 200px 1fr; height: 100vh; }
+nav { background: var(--panel); border-right: 1px solid var(--line); padding: 16px 10px; display: flex; flex-direction: column; gap: 4px; }
+nav h1 { font-size: 16px; margin: 0 8px 14px; color: var(--accent); font-family: var(--font-head); text-transform: var(--h-case); letter-spacing: var(--h-track); }
+nav button { text-align: left; background: none; border: 0; color: var(--muted); padding: 9px 12px; border-radius: var(--r-sm); cursor: pointer; font: inherit; }
+nav button:hover { background: var(--panel2); color: var(--text); }
+nav button.on { background: var(--panel2); color: var(--text); box-shadow: inset 3px 0 var(--accent); }
+nav .spacer { flex: 1; }
+nav .badge { float: right; background: var(--bad); color: #fff; border-radius: var(--r-pill); padding: 0 7px; font-size: 12px; }
+main { overflow: auto; padding: 22px 28px 40px; }
+h2 { margin: 0 0 16px; font-size: 20px; font-family: var(--font-head); text-transform: var(--h-case); letter-spacing: var(--h-track); }
+h3 { margin: 22px 0 10px; font-size: 15px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; box-shadow: var(--card-fx); }
+.card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+.card .value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; box-shadow: var(--card-fx); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 1100px) { .grid2 { grid-template-columns: 1fr; } }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; position: sticky; top: 0; background: var(--panel); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr:hover td { background: var(--row-hover); }
+input, select { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 7px 10px; font: inherit; }
+input:focus, select:focus { outline: 1px solid var(--accent); }
+button.btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--r-sm); padding: 7px 14px; font: inherit; font-weight: 600; cursor: pointer; box-shadow: var(--btn-fx); }
+button.btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+button.btn.danger { background: transparent; color: var(--bad); border: 1px solid var(--bad); }
+button.btn:disabled { opacity: .5; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.pill { display: inline-block; padding: 2px 9px; border-radius: var(--r-pill); font-size: 12px; font-weight: 600; }
+.pill.ok { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+.pill.low { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.pill.out { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+.muted { color: var(--muted); }
+.banner { background: color-mix(in srgb, var(--warn) 10%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); border-radius: var(--r); padding: 12px 16px; margin-bottom: 16px; }
+.banner.bad { background: color-mix(in srgb, var(--bad) 10%, transparent); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.scroll { max-height: 62vh; overflow: auto; }
+.modal-back { position: fixed; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 5; }
+.modal { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--card-fx); padding: 20px; width: 440px; max-width: 92vw; }
+.modal label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+.modal input { width: 100%; }
+
+/* Theme picker (Settings). Each card carries its own data-theme so it previews the real palette. */
+.themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.theme-card { background: var(--bg); color: var(--text); border: 2px solid var(--line); border-radius: var(--r); padding: 12px; text-align: left; cursor: pointer; font: inherit; }
+.theme-card:hover { border-color: var(--muted); }
+.theme-card.on { border-color: var(--accent); }
+.theme-card { box-shadow: var(--card-fx); }
+.theme-card .name { font-family: var(--font-head); text-transform: var(--h-case); letter-spacing: var(--h-track); font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+.theme-card .blurb { color: var(--muted); font-size: 12px; margin: 2px 0 10px; }
+.theme-card .swatches { display: flex; gap: 6px; }
+.theme-card .swatches i { width: 22px; height: 22px; border-radius: var(--r-sm); border: 1px solid var(--line); display: block; }
+.theme-card .check { color: var(--accent); font-size: 12px; font-weight: 700; }
+
+/* Date range bar (segmented buttons + custom calendar pickers) */
+.daterange { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; background: var(--panel); }
+.seg button { background: none; border: 0; border-right: 1px solid var(--line); color: var(--muted); padding: 7px 14px; font: inherit; cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button:hover { background: var(--panel2); color: var(--text); }
+.seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.daterange .custom { display: flex; gap: 10px; align-items: center; }
+.daterange .custom label { color: var(--muted); display: flex; gap: 6px; align-items: center; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+.daterange .range-label { margin-left: auto; }
+
+/* Dashboard stat strip */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.stats .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.stats .value.pos { color: var(--good); }
+.stats .value.neg { color: var(--bad); }
+.charselect { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; }
+.charselect select { text-transform: none; letter-spacing: 0; font-size: 14px; min-width: 180px; }
+.filters { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 16px; }
+.filters .daterange { margin-bottom: 0; }
+
+/* Prices screen: sortable headers and trend labels (colors come only from theme variables) */
+th .sortbtn { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; }
+th .sortbtn:hover { color: var(--text); }
+.small { font-size: 12px; }
+.trend { font-weight: 600; white-space: nowrap; }
+.trend.up { color: var(--good); }
+.trend.down { color: var(--bad); }
+.trend.flat { color: var(--muted); }
+.trend.unknown { color: var(--muted); font-weight: 400; font-size: 12px; }
+table.prices th, table.prices td.num, table.prices .trend { white-space: nowrap; }
+
+/* Item price detail drawer (theme variables only) */
+.drawer-back { position: fixed; inset: 0; background: var(--scrim); z-index: 6; display: flex; justify-content: flex-end; }
+.drawer { width: min(760px, 94vw); height: 100%; overflow: auto; background: var(--bg); border-left: 1px solid var(--line); padding: 22px 24px 40px; box-shadow: var(--card-fx); }
+.drawer-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.chart-tip { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; color: var(--text); font-size: 12px; line-height: 1.5; }
+tr.clickable { cursor: pointer; }
+tr.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.drawer { width: min(860px, 94vw); }
+.drawer .stats { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+.drawer .stats .card .value { font-size: 20px; }
+.drawer th, .drawer td:first-child, .drawer td.num { white-space: nowrap; }
