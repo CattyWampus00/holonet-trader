@@ -1,8 +1,9 @@
 import { copyFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
+import { summarizeCustomers, type SaleLine } from '../shared/customers'
 import { cleanItemName, itemKey } from '../shared/mailParser'
 import { classifyTrend, summarize, unitPrice } from '../shared/priceStats'
-import type { InventoryItem, ParsedMail, PricePointRow, PriceRow, PriceSeries, SaleRow } from '../shared/types'
+import type { CustomerRow, InventoryItem, ParsedMail, PricePointRow, PriceRow, PriceSeries, SaleRow } from '../shared/types'
 
 /**
  * Bump this whenever the mail parser starts understanding mails it used to skip.
@@ -230,10 +231,8 @@ export class Store {
     const q = (sql: string, ...a: (string | number)[]) =>
       this.db.prepare(sql.replace('{CF}', cf)).all(...a, ...(sql.includes('{CF}') && character ? [character] : [])) as Record<string, number | string>[]
     const totals = q(
-      `SELECT COUNT(*) AS sales, COALESCE(SUM(e.price),0) AS revenue, COALESCE(SUM(e.quantity),0) AS units,
-              COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN i.cost_each * e.quantity END),0) AS cost,
-              COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN e.price END),0) AS costedRevenue
-       FROM events e LEFT JOIN items i ON i.id=e.item_id WHERE e.kind='sale' AND e.ts BETWEEN ? AND ?{CF}`, from, to)[0]
+      `SELECT COUNT(*) AS sales, COALESCE(SUM(price),0) AS revenue, COALESCE(SUM(quantity),0) AS units
+       FROM events WHERE kind='sale' AND ts BETWEEN ? AND ?{CF}`, from, to)[0]
     const spent = q("SELECT COALESCE(SUM(price),0) AS spent FROM events WHERE kind='purchase' AND ts BETWEEN ? AND ?{CF}", from, to)[0]
     const byDay = q(
       `SELECT date(ts,'unixepoch','localtime') AS day, SUM(price) AS revenue, COUNT(*) AS sales
@@ -248,6 +247,17 @@ export class Store {
       `SELECT character AS name, COUNT(*) AS sales, SUM(price) AS revenue
        FROM events WHERE kind='sale' AND ts BETWEEN ? AND ? GROUP BY character ORDER BY revenue DESC`, from, to)
     return { totals, spent, byDay, topItems, byVendor, byCharacter }
+  }
+
+  /** Buyers who bought from your vendors in the range, biggest spender first. `character` limits it to one player character. */
+  customerList(from: number, to: number, character?: string): CustomerRow[] {
+    const rows = this.db
+      .prepare(
+        `SELECT counterparty AS buyer, item_name AS itemName, quantity, price, ts FROM events
+         WHERE kind='sale' AND counterparty IS NOT NULL AND ts BETWEEN ? AND ?${character ? ' AND character = ?' : ''}`
+      )
+      .all(from, to, ...(character ? [character] : [])) as unknown as SaleLine[]
+    return summarizeCustomers(rows)
   }
 
   // ---- price history ------------------------------------------------------

@@ -61,7 +61,7 @@ SWGAide is mostly about resources, crafting and surveying. Its sales tracking is
 5. **Flip profit:** match purchases to later sales of the same item name, so profit needs no manual cost entry.
 6. **Offers inbox:** buy offers made to your vendors, with a dismiss button.
 7. **Customers:** top and repeat buyers; **busiest times:** sales by hour and weekday.
-7b. **Customers tab (owner's idea, 2026-11-17):** one row per buyer, sorted by credits spent, with how many items they bought. Data is already stored (`counterparty` on sale events); needs the same date and character filters as Sales Log and Prices.
+7b. **Customers tab (DONE, 2026-11-17, owner's idea):** one row per buyer with credits spent (default sort), purchases, items and last bought; sortable, searchable, same date and character filters. Items rule: a crate counts all its contents, a resource sale counts as 1 (`itemsInSale` in `src/shared/customers.ts`, tested). Code: `customerList` in `db.ts`, `pages/Customers.tsx`.
 8. **Unrecognized-mails counter** (finds new mail types like the survey one), backup/export of the database.
 
 ## Mail types discovered but NOT parsed yet
@@ -72,7 +72,7 @@ SWGAide is mostly about resources, crafting and surveying. Its sales tracking is
 - The owner's data: 12 of these on one character, none on the others. Planet and class pairs seen: Yavin4 Chemical, Tatooine Geothermal Energy, Talus Wind Energy and Flora, Naboo / Mustafar / Lok / Kashyyyk Mineral, Endor Chemical, Dathomir Water, Dantooine Solar Energy, Corellia Gas.
 - Possible feature: a Resources screen (current spawns per planet and class, newest survey wins, history of when a name was last seen). Needs design with the owner first.
 - **Known trap (FIXED 2026-11-17):** the scanner marks every file it reads as scanned, including mails the parser skipped. Fixed with `PARSER_VERSION` in `db.ts`: bump it and every mail is re-read once.
-- **Dashboard Profit box is suspect (owner, 2026-11-17):** it showed -163M while the owner has made 3+ billion since April. It only counts sales of items that have a cost entered, and the attachments have cost each 800,000 against a sell price around 700,000. Decide with the owner whether to remove or redo it.
+- **Dashboard Profit box REMOVED (owner's call, 2026-11-17):** it showed -163M while the owner has made 3+ billion since April, because it only counted sales of items with a cost entered. Revenue, purchases and "Net after purchases" are what the owner trusts. The Inventory "Cost each" field still exists but nothing uses it now.
 
 ## Handy commands
 ```bash

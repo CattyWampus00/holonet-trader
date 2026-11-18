@@ -23,8 +23,6 @@ export default function Dashboard({ version, items, settings, characters }: { ve
 
   const low = items.filter((i) => getStockStatus(i.onHand, i.lowThreshold, settings.lowThreshold) !== 'ok')
   const t = s?.totals
-  const profit = t ? t.costedRevenue - t.cost : 0
-  const hasCosts = !!t && t.cost > 0 // profit only means something once the player has entered item costs
   const net = t && s ? t.revenue - s.spent.spent : 0
 
   return (
@@ -52,7 +50,6 @@ export default function Dashboard({ version, items, settings, characters }: { ve
             <div className="card"><div className="label">Average sale</div><div className="value">{t.sales ? credits(t.revenue / t.sales) : '—'}</div><div className="sub">credits per sale</div></div>
             <div className="card"><div className="label">Spent on purchases</div><div className="value">{credits(s.spent.spent)}</div><div className="sub">bought from other vendors</div></div>
             <div className="card"><div className="label">Net after purchases</div><div className={'value ' + (net >= 0 ? 'pos' : 'neg')}>{(net >= 0 ? '+' : '−') + credits(Math.abs(net))}</div><div className="sub">revenue minus purchases</div></div>
-            {hasCosts && <div className="card"><div className="label">Profit</div><div className={'value ' + (profit >= 0 ? 'pos' : 'neg')}>{credits(profit)}</div><div className="sub">on sales with a cost entered</div></div>}
           </div>
           <h3>Revenue per day</h3>
           <div className="panel" style={{ height: 260 }}>
@@ -89,7 +86,7 @@ function Rank({ rows }: { rows: { name: string; sales: number; revenue: number }
   return (
     <table>
       <thead><tr><th>Name</th><th className="num">Sales</th><th className="num">Credits</th></tr></thead>
-      <tbody>{rows.map((r) => <tr key={r.name}><td>{cleanItemName(r.name)}</td><td className="num">{r.sales}</td><td className="num">{credits(r.revenue)}</td></tr>)}</tbody>
+      <tbody>{rows.map((r) => <tr key={r.name}><td>{cleanItemName(r.name)}</td><td className="num">{credits(r.sales)}</td><td className="num">{credits(r.revenue)}</td></tr>)}</tbody>
     </table>
   )
 }

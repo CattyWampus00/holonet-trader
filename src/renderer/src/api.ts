@@ -1,10 +1,10 @@
 import type { ThemeId } from '@shared/themes'
-import type { DetectedLocation, InventoryItem, PriceRow, PriceSeries, SaleRow, ScanResult } from '@shared/types'
+import type { CustomerRow, DetectedLocation, InventoryItem, PriceRow, PriceSeries, SaleRow, ScanResult } from '@shared/types'
 
 export interface Settings { serverDir: string | null; lowThreshold: number; location: DetectedLocation | null; theme: ThemeId }
 export interface Row { name: string; sales: number; revenue: number; units?: number }
 export interface Summary {
-  totals: { sales: number; revenue: number; units: number; cost: number; costedRevenue: number }
+  totals: { sales: number; revenue: number; units: number }
   spent: { spent: number }
   byDay: { day: string; revenue: number; sales: number }[]
   topItems: Row[]
@@ -27,6 +27,7 @@ export interface Api {
   scan(): Promise<ScanResult | null>
   events(f?: { kinds?: string[]; from?: number; to?: number; search?: string; character?: string; limit?: number }): Promise<SaleRow[]>
   summary(from: number, to: number, character?: string): Promise<Summary>
+  customerList(from: number, to: number, character?: string): Promise<CustomerRow[]>
   priceList(from: number, to: number, character?: string): Promise<PriceRow[]>
   priceSeries(key: string, from: number, to: number, character?: string): Promise<PriceSeries>
   vendorAlerts(): Promise<VendorAlert[]>

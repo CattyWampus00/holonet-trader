@@ -100,6 +100,18 @@ export interface PriceRow {
   crateSizes: number[]
 }
 
+/** One row of the Customers table: everything one buyer has bought from your vendors. */
+export interface CustomerRow {
+  name: string
+  /** Total credits spent. */
+  credits: number
+  /** Number of sales (mails). */
+  purchases: number
+  /** Items bought: crate contents count in full, a resource sale counts as 1. */
+  items: number
+  lastTs: number
+}
+
 /** One sale for the item detail chart and table. */
 export interface PricePointRow {
   ts: number

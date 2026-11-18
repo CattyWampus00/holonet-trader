@@ -6,11 +6,12 @@ import { applyTheme } from './theme'
 import Dashboard from './pages/Dashboard'
 import Inventory from './pages/Inventory'
 import SettingsPage from './pages/SettingsPage'
+import Customers from './pages/Customers'
 import Prices from './pages/Prices'
 import Sales from './pages/Sales'
 
-type Tab = 'dashboard' | 'sales' | 'prices' | 'inventory' | 'settings'
-const TABS: [Tab, string][] = [['dashboard', 'Dashboard'], ['sales', 'Sales Log'], ['prices', 'Prices'], ['inventory', 'Inventory'], ['settings', 'Settings']]
+type Tab = 'dashboard' | 'sales' | 'prices' | 'customers' | 'inventory' | 'settings'
+const TABS: [Tab, string][] = [['dashboard', 'Dashboard'], ['sales', 'Sales Log'], ['prices', 'Prices'], ['customers', 'Customers'], ['inventory', 'Inventory'], ['settings', 'Settings']]
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('dashboard')
@@ -62,6 +63,7 @@ export default function App() {
         {tab === 'dashboard' && <Dashboard version={version} items={items} settings={settings} characters={settings.location?.characters ?? []} />}
         {tab === 'sales' && <Sales version={version} characters={settings.location?.characters ?? []} />}
         {tab === 'prices' && <Prices version={version} characters={settings.location?.characters ?? []} />}
+        {tab === 'customers' && <Customers version={version} characters={settings.location?.characters ?? []} />}
         {tab === 'inventory' && <Inventory version={version} items={items} settings={settings} onChange={reload} />}
         {tab === 'settings' && <SettingsPage settings={settings} onChange={reload} />}
       </main>

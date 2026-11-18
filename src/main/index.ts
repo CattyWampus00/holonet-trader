@@ -89,6 +89,7 @@ function registerIpc() {
   ipcMain.handle('prices:series', (_e, key: string, from: number, to: number, character?: string) =>
     typeof key === 'string' && key ? store.priceSeries(key, from, to, character || undefined) : { row: null, points: [] }
   )
+  ipcMain.handle('customers:list', (_e, from: number, to: number, character?: string) => store.customerList(from, to, character || undefined))
   ipcMain.handle('vendorAlerts', () => store.vendorAlerts())
   ipcMain.handle('inventory:list', () => store.listItems())
   ipcMain.handle('inventory:save', (_e, item) => store.saveItem(item))

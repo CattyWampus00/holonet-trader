@@ -16,6 +16,7 @@ const api = {
   summary: (from: number, to: number, character?: string) => call('summary', from, to, character),
   priceList: (from: number, to: number, character?: string) => call('prices:list', from, to, character),
   priceSeries: (key: string, from: number, to: number, character?: string) => call('prices:series', key, from, to, character),
+  customerList: (from: number, to: number, character?: string) => call('customers:list', from, to, character),
   vendorAlerts: () => call('vendorAlerts'),
   listItems: () => call('inventory:list'),
   saveItem: (item: unknown) => call('inventory:save', item),

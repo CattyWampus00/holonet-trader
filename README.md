@@ -22,6 +22,7 @@ It never connects to the game or to the internet. It only reads the mail files y
 - **Dashboard:** revenue, sales, purchases, a revenue-per-day chart, top items and vendors.
 - **Sales Log:** every sale with search, date range, character filter and CSV export.
 - **Prices:** what each item really sells for per unit, a recent price, and an up/flat/down trend.
+- **Customers:** every buyer, sorted by credits spent, with purchases and items bought.
 - **Inventory:** items you count by hand. Sales reduce stock, and you get a warning when an item runs low.
 - **Settings:** mail folder, eight themes, low-stock level, exit and full screen (F11 toggles full screen, Esc leaves it, Ctrl+Q quits).
 
