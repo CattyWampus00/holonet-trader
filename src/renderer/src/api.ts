@@ -1,7 +1,7 @@
 import type { ThemeId } from '@shared/themes'
 import type { CustomerRow, DetectedLocation, InventoryItem, PriceRow, PriceSeries, SaleRow, ScanResult } from '@shared/types'
 
-export interface Settings { serverDir: string | null; lowThreshold: number; location: DetectedLocation | null; theme: ThemeId }
+export interface Settings { serverDir: string | null; lowThreshold: number; location: DetectedLocation | null; theme: ThemeId; autoUpdate: boolean }
 export interface Row { name: string; sales: number; revenue: number; units?: number }
 export interface Summary {
   totals: { sales: number; revenue: number; units: number }
@@ -19,6 +19,7 @@ export interface Api {
   getSettings(): Promise<Settings>
   setThreshold(n: number): Promise<void>
   setTheme(id: ThemeId): Promise<void>
+  setAutoUpdate(on: boolean): Promise<void>
   quitApp(): Promise<void>
   toggleFullScreen(): Promise<void>
   detectLocations(): Promise<DetectedLocation[]>

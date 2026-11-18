@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { watch, type FSWatcher } from 'node:fs'
 import { join } from 'node:path'
 import { DEFAULT_LOW_THRESHOLD, getStockStatus } from '../shared/stock'
@@ -17,6 +18,24 @@ const globalThreshold = () => Number(store.getSetting('lowThreshold') ?? DEFAULT
 const savedTheme = (): ThemeId => {
   const t = store.getSetting('theme')
   return isThemeId(t) ? t : DEFAULT_THEME
+}
+
+/** On unless the player switched it off in Settings. */
+const autoUpdateOn = () => store.getSetting('autoUpdate') !== '0'
+
+/**
+ * Asks GitHub Releases whether a newer version exists (installed app only, never in development) and downloads it
+ * quietly. It installs when the player next closes the app. This is the only time the app talks to the internet.
+ */
+function checkForUpdates() {
+  if (!app.isPackaged || !autoUpdateOn()) return
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.on('update-downloaded', (info) => {
+    if (Notification.isSupported()) new Notification({ title: 'HoloNet Trader update ready', body: `Version ${info.version} installs when you close the app.` }).show()
+  })
+  autoUpdater.on('error', () => { /* offline, or no newer release yet: nothing to tell the player */ })
+  autoUpdater.checkForUpdates().catch(() => {})
 }
 
 function currentLocation(): DetectedLocation | null {
@@ -64,8 +83,10 @@ function registerIpc() {
     serverDir: store.getSetting('serverDir'),
     lowThreshold: globalThreshold(),
     location: currentLocation(),
-    theme: savedTheme()
+    theme: savedTheme(),
+    autoUpdate: autoUpdateOn()
   }))
+  ipcMain.handle('settings:setAutoUpdate', (_e, on: unknown) => store.setSetting('autoUpdate', on === false ? '0' : '1'))
   ipcMain.handle('settings:setTheme', (_e, id: unknown) => {
     if (isThemeId(id)) store.setSetting('theme', id)
   })
@@ -126,6 +147,7 @@ app.whenReady().then(() => {
   createWindow()
   startWatching()
   win?.webContents.once('did-finish-load', () => setTimeout(runScan, 500))
+  setTimeout(checkForUpdates, 10_000) // after the window is up, so start-up is never slowed
 })
 
 app.on('window-all-closed', () => { watcher?.close(); app.quit() })

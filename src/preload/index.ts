@@ -6,6 +6,7 @@ const api = {
   getSettings: () => call('settings:get'),
   setThreshold: (n: number) => call('settings:setThreshold', n),
   setTheme: (id: string) => call('settings:setTheme', id),
+  setAutoUpdate: (on: boolean) => call('settings:setAutoUpdate', on),
   quitApp: () => call('app:quit'),
   toggleFullScreen: () => call('app:toggleFullScreen'),
   detectLocations: () => call('location:detect'),

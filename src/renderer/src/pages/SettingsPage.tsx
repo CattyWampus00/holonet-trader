@@ -88,6 +88,18 @@ export default function SettingsPage({ settings, onChange }: { settings: Setting
         </div>
       </div>
 
+      <h3>Updates</h3>
+      <div className="panel">
+        <p style={{ marginTop: 0 }} className="muted">
+          When this is on, the installed app asks GitHub whether a newer version exists a few seconds after it starts, and downloads it quietly.
+          The update installs when you close the app. Nothing about you or your sales is sent. This is the only time the app uses the internet.
+        </p>
+        <label className="row">
+          <input type="checkbox" checked={settings.autoUpdate} onChange={async (e) => { await api.setAutoUpdate(e.target.checked); onChange() }} />
+          Check for updates automatically
+        </label>
+      </div>
+
       <h3>Window</h3>
       <div className="panel">
         <p style={{ marginTop: 0 }} className="muted">F11 switches full screen on and off, Esc leaves full screen, and Ctrl+Q quits.</p>

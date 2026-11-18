@@ -2,7 +2,7 @@
 
 A desktop app for **SWG Legends** traders. It reads the mail files the game saves when you run `/mailsave`, and turns your vendor sales into a sales log, price history, charts and low-stock warnings for an inventory you enter by hand.
 
-It never connects to the game or to the internet. It only reads the mail files you save, and everything stays on your computer. It never writes into the game's folders.
+It never connects to the game. It only reads the mail files you save, and everything stays on your computer. It never writes into the game's folders. The one thing it does online is check this repository's Releases page for a newer version (nothing about you or your sales is sent); you can turn that off in Settings.
 
 ## Install (players)
 
@@ -10,6 +10,8 @@ It never connects to the game or to the internet. It only reads the mail files y
 2. Run it. Windows may show a blue "Windows protected your PC" (SmartScreen) box because the app is not code-signed yet. Choose **More info**, then **Run anyway**.
 3. Pick an install folder if you like. The installer puts a **HoloNet Trader** icon on your desktop and in the Start menu.
 4. Start the app from that icon.
+
+After that, the installed app updates itself: it checks for a newer release shortly after it starts, downloads it quietly, and installs it when you close the app. Your sales and inventory are kept.
 
 ## First run
 
@@ -43,3 +45,4 @@ The `.bat` installs dependencies and builds on its first run. Players do not nee
 
 - Unofficial fan tool. It has no connection to the game's makers.
 - Windows only for now.
+- Licensed under the MIT license (see `LICENSE`).
