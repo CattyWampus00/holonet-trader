@@ -1,6 +1,6 @@
 # HoloNet Trader
 
-A desktop app for **SWG Legends** traders. It reads the mail files the game saves when you run `/mailsave`, and turns your vendor sales into a sales log, price history, charts and low-stock warnings for an inventory you enter by hand.
+A desktop app for **SWG** traders. It reads the mail files the game saves when you run `/mailsave`, and turns your vendor sales into a sales log, price history, charts and low-stock warnings for an inventory you enter by hand.
 
 It never connects to the game. It only reads the mail files you save, and everything stays on your computer. It never writes into the game's folders. The one thing it does online is check this repository's Releases page for a newer version (nothing about you or your sales is sent); you can turn that off in Settings.
 
