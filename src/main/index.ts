@@ -118,7 +118,7 @@ function registerIpc() {
   ipcMain.handle('inventory:adjust', (_e, id: number, delta: number, reason: string) => store.adjustStock(id, delta, reason))
   ipcMain.handle('unmatched:list', () => store.unmatched())
   ipcMain.handle('unmatched:link', (_e, key: string, itemId: number) => store.linkAlias(key, itemId))
-  ipcMain.handle('aliases:list', (_e, itemId: number) => store.linkedNames(itemId))
+  ipcMain.handle('aliases:list', (_e, itemId?: number) => store.linkedNames(itemId))
   ipcMain.handle('aliases:unlink', (_e, key: string) => store.unlinkAlias(key))
 }
 

@@ -12,7 +12,7 @@ export interface Summary {
   byCharacter: Row[]
 }
 export interface Unmatched { key: string; name: string; sales: number; units: number }
-export interface LinkedName { key: string; name: string; sales: number }
+export interface LinkedName { key: string; name: string; sales: number; itemId: number; itemName: string }
 export interface VendorAlert { id: number; character: string; ts: number; kind: 'vendor_empty' | 'vendor_maint'; vendor: string | null }
 export interface ItemInput { id?: number; name: string; onHand: number; costEach: number; lowThreshold: number | null; notes: string }
 
@@ -39,7 +39,8 @@ export interface Api {
   adjustStock(id: number, delta: number, reason: string): Promise<void>
   unmatched(): Promise<Unmatched[]>
   linkAlias(key: string, itemId: number): Promise<void>
-  linkedNames(itemId: number): Promise<LinkedName[]>
+  /** One item's links, or every link when no id is given. */
+  linkedNames(itemId?: number): Promise<LinkedName[]>
   /** Resolves to the number of units given back to stock. */
   unlinkAlias(key: string): Promise<number>
   onDataChanged(cb: () => void): () => void

@@ -46,8 +46,10 @@ describe('Store', () => {
     s.linkAlias('pistol barrel', id) // the mis-click
     s.insertEvent('A', sale('2', future(), 'Pistol Barrel', 3, 100)) // later sale follows the wrong link
     expect(s.getItem(id)!.onHand).toBe(5)
-    expect(s.linkedNames(id)).toEqual([{ key: 'pistol barrel', name: 'Pistol Barrel', sales: 2 }])
+    const link = { key: 'pistol barrel', name: 'Pistol Barrel', sales: 2, itemId: id, itemName: 'Rifle Scope' }
+    expect(s.linkedNames(id)).toEqual([link])
     expect(s.linkedNames(other)).toEqual([])
+    expect(s.linkedNames()).toEqual([link]) // every link, for the overview list
 
     expect(s.unlinkAlias('pistol barrel')).toBe(5)
     expect(s.getItem(id)!.onHand).toBe(10)

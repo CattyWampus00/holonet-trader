@@ -206,14 +206,20 @@ export class Store {
     for (const e of rows) this.applySaleToStock(e.id, itemId, e.quantity, e.ts)
   }
 
-  /** Sale names linked to an item by hand (aliases), with how often each sold. The item's own name is not listed. */
-  linkedNames(itemId: number): { key: string; name: string; sales: number }[] {
+  /**
+   * Sale names linked to items by hand (aliases), with how often each sold and which item they point at.
+   * Pass an item id for one item's links, or nothing for every link. An item's own name is never listed.
+   */
+  linkedNames(itemId?: number): { key: string; name: string; sales: number; itemId: number; itemName: string }[] {
     return this.db
       .prepare(`SELECT a.alias_key AS key,
                        COALESCE((SELECT MIN(item_name) FROM events WHERE item_key = a.alias_key), a.alias_key) AS name,
-                       (SELECT COUNT(*) FROM events WHERE item_key = a.alias_key AND kind = 'sale') AS sales
-                FROM aliases a WHERE a.item_id = ? ORDER BY name COLLATE NOCASE`)
-      .all(itemId) as never
+                       (SELECT COUNT(*) FROM events WHERE item_key = a.alias_key AND kind = 'sale') AS sales,
+                       i.id AS itemId, i.name AS itemName
+                FROM aliases a JOIN items i ON i.id = a.item_id
+                WHERE ?1 IS NULL OR a.item_id = ?1
+                ORDER BY i.name COLLATE NOCASE, name COLLATE NOCASE`)
+      .all(itemId ?? null) as never
   }
 
   /**

@@ -11,9 +11,13 @@ export default function Inventory({ version, items, settings, onChange }: Props)
   const [editing, setEditing] = useState<ItemInput | null>(null)
   const [adjusting, setAdjusting] = useState<InventoryItem | null>(null)
   const [unmatched, setUnmatched] = useState<Unmatched[]>([])
+  const [links, setLinks] = useState<LinkedName[]>([])
   const [filter, setFilter] = useState('')
 
-  useEffect(() => { api.unmatched().then(setUnmatched) }, [version])
+  useEffect(() => {
+    api.unmatched().then(setUnmatched)
+    api.linkedNames().then(setLinks)
+  }, [version])
 
   const shown = items.filter((i) => i.name.toLowerCase().includes(filter.toLowerCase()))
 
@@ -78,11 +82,42 @@ export default function Inventory({ version, items, settings, onChange }: Props)
         </table>
       </div>
 
+      {links.length > 0 && <>
+        <h3>Linked sale names</h3>
+        <div className="panel scroll">
+          <p className="muted" style={{ marginTop: 0 }}>
+            Every sale name you linked by hand, and the item it counts against. If one looks wrong, Unlink it: its stock is given back
+            and the name returns to the list above.
+          </p>
+          <table>
+            <thead><tr><th>Name in sale mails</th><th>Counts against item</th><th className="num">Sales</th><th /></tr></thead>
+            <tbody>
+              {links.map((l) => (
+                <tr key={l.key}>
+                  <td>{cleanItemName(l.name)}</td>
+                  <td>{l.itemName}</td>
+                  <td className="num">{l.sales}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button className="btn ghost" onClick={async () => { if ((await askAndUnlink(l)) !== null) onChange() }}>Unlink</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>}
+
       {editing && <EditModal item={editing} onClose={() => setEditing(null)} onSave={async (i) => { await api.saveItem(i); setEditing(null); onChange() }}
         onDelete={editing.id ? async () => { await api.deleteItem(editing.id!); setEditing(null); onChange() } : undefined} onChanged={onChange} />}
       {adjusting && <AdjustModal item={adjusting} onClose={() => setAdjusting(null)} onSave={async (d, reason) => { await api.adjustStock(adjusting.id, d, reason); setAdjusting(null); onChange() }} />}
     </>
   )
+}
+
+/** Confirms, then undoes one link. Resolves to the units given back, or null if the player said no. */
+async function askAndUnlink(l: LinkedName): Promise<number | null> {
+  if (!confirm(`Unlink "${cleanItemName(l.name)}" from "${l.itemName}"?\n\nIts ${l.sales} sale(s) go back to "Sales not matched", and any stock they took off "${l.itemName}" is given back.`)) return null
+  return api.unlinkAlias(l.key)
 }
 
 /** Sale names that were linked to this item by hand, each with an Unlink button to undo a wrong link. */
@@ -92,9 +127,8 @@ function LinkedNames({ itemId, onUnlinked }: { itemId: number; onUnlinked: (give
   useEffect(() => { load() }, [itemId])
   if (!links.length) return null
   const unlink = async (l: LinkedName) => {
-    const name = cleanItemName(l.name)
-    if (!confirm(`Unlink "${name}" from this item?\n\nIts ${l.sales} sale(s) go back to "Sales not matched", and any stock they took off this item is given back.`)) return
-    const givenBack = await api.unlinkAlias(l.key)
+    const givenBack = await askAndUnlink(l)
+    if (givenBack === null) return
     await load()
     onUnlinked(givenBack)
   }
