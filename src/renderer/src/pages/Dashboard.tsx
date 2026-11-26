@@ -24,6 +24,8 @@ export default function Dashboard({ version, items, settings, characters }: { ve
   const low = items.filter((i) => getStockStatus(i.onHand, i.lowThreshold, settings.lowThreshold) !== 'ok')
   const t = s?.totals
   const net = t && s ? t.revenue - s.spent.spent : 0
+  // Plain total: units on hand times the cost each that was entered. Items with no cost entered add 0.
+  const inventoryValue = items.reduce((sum, i) => sum + i.onHand * i.costEach, 0)
 
   return (
     <>
@@ -50,6 +52,7 @@ export default function Dashboard({ version, items, settings, characters }: { ve
             <div className="card"><div className="label">Average sale</div><div className="value">{t.sales ? credits(t.revenue / t.sales) : '—'}</div><div className="sub">credits per sale</div></div>
             <div className="card"><div className="label">Spent on purchases</div><div className="value">{credits(s.spent.spent)}</div><div className="sub">bought from other vendors</div></div>
             <div className="card"><div className="label">Net after purchases</div><div className={'value ' + (net >= 0 ? 'pos' : 'neg')}>{(net >= 0 ? '+' : '−') + credits(Math.abs(net))}</div><div className="sub">revenue minus purchases</div></div>
+            <div className="card"><div className="label">Inventory value</div><div className="value">{credits(inventoryValue)}</div><div className="sub">on hand × cost each, now</div></div>
           </div>
           <h3>Revenue per day</h3>
           <div className="panel" style={{ height: 260 }}>
