@@ -183,15 +183,16 @@ export interface MailClue {
  * Returning null is safe: the mail is still listed as a notice, it just changes nothing.
  */
 export function matchStructure(
-  list: { id: number; character: string; name: string; typeName: string | null; planet: string; kind: StructureKind }[],
+  list: { id: number; character: string; name: string; typeName: string | null; planet: string; kind: StructureKind; otherNames?: string[] }[],
   clue: MailClue
 ): number | null {
   const norm = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
   const want = norm(clue.name)
   const mine = list.filter((s) => norm(s.character) === norm(clue.character) && (!clue.kind || s.kind === clue.kind))
-  // 1. The custom name the player typed. 2. The machine type's name, narrowed by planet when the mail gives one.
-  // Two or more still fitting means the mail can't say which one, so nothing is changed (null).
-  const byName = mine.filter((s) => norm(s.name) === want)
+  // 1. The custom name the player typed, or another name saved by linking a mail. 2. The machine type's name,
+  // narrowed by planet when the mail gives one. Two or more still fitting means the mail can't say which one,
+  // so nothing is changed (null).
+  const byName = mine.filter((s) => norm(s.name) === want || (s.otherNames ?? []).some((n) => norm(n) === want))
   if (byName.length) return byName.length === 1 ? byName[0]!.id : null
   const byType = mine.filter((s) => norm(s.typeName) === want && (!clue.planet || norm(s.planet) === norm(clue.planet)))
   return byType.length === 1 ? byType[0]!.id : null

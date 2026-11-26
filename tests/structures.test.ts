@@ -155,3 +155,10 @@ describe('matchStructure', () => {
     expect(matchStructure(list, { character: 'Nobody', name: 'Ore Elite' })).toBeNull()
   })
 })
+
+describe('matchStructure with other names', () => {
+  it('matches a name saved by linking a mail', () => {
+    const list = [{ id: 7, character: 'Testchar', name: 'Gear Maker', typeName: null, planet: 'Talus', kind: 'factory' as const, otherNames: ['Equipment Factory'] }]
+    expect(matchStructure(list, { character: 'Testchar', name: 'equipment  factory' })).toBe(7)
+  })
+})

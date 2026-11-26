@@ -36,6 +36,9 @@ export interface Api {
   priceSeries(key: string, from: number, to: number, character?: string): Promise<PriceSeries>
   vendorAlerts(): Promise<VendorAlert[]>
   structureMails(): Promise<StructureMail[]>
+  dismissMail(id: number): Promise<void>
+  linkMail(eventId: number, structureId: number): Promise<void>
+  removeStructureName(id: number, name: string): Promise<void>
   listItems(): Promise<InventoryItem[]>
   saveItem(i: ItemInput): Promise<number>
   deleteItem(id: number): Promise<void>

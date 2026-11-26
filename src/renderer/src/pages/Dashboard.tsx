@@ -28,9 +28,9 @@ export default function Dashboard({ version, items, settings, characters }: { ve
     api.structureMails().then(setMails)
   }, [version])
   const [mails, setMails] = useState<StructureMail[]>([])
-  // Empty-pool mails from the last 7 days, unless a newer reading shows the pool was topped up since.
+  // Empty-pool mails from the last 7 days that were not dismissed (by hand, or by a later maintenance reading above 0).
   const bankPaying = mails.filter((m) => {
-    if (m.kind !== 'structure_maint' || Date.now() / 1000 - m.ts > 7 * 86400) return false
+    if (m.kind !== 'structure_maint' || m.dismissed || Date.now() / 1000 - m.ts > 7 * 86400) return false
     const s = structures.find((x) => x.id === m.structureId)
     return !s?.latest.maint || s.latest.maint.ts <= m.ts || s.latest.maint.value === 0
   })
@@ -53,8 +53,14 @@ export default function Dashboard({ version, items, settings, characters }: { ve
         </div>
       )}
       {bankPaying.length > 0 && (
-        <div className="banner bad">
-          <b>Maintenance pool empty:</b> {[...new Set(bankPaying.map((m) => `${m.name} (${m.character})`))].join(', ')}. The game is taking upkeep from your bank.
+        <div className="banner bad row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 12 }}>
+          <span>
+            <b>Maintenance pool empty:</b> {[...new Set(bankPaying.map((m) => `${m.name} (${m.character})`))].join(', ')}. The game is taking upkeep from your bank.
+            {bankPaying.some((m) => m.structureId == null) && ' Not matched to a structure in the app: add it or use Link to… on the Structures tab.'}
+            {' '}Entering a maintenance reading clears this.
+          </span>
+          <button className="btn ghost" title="Hide this notice"
+            onClick={async () => { for (const m of bankPaying) await api.dismissMail(m.id); setMails(await api.structureMails()) }}>Dismiss</button>
         </div>
       )}
       {alerts.length > 0 && Date.now() / 1000 - alerts[0]!.ts < 7 * 86400 && (

@@ -159,6 +159,38 @@ Parser work follows the existing rule: pure parser functions with tests on hand-
 
 ---
 
+## Step 6: clearing structure notices (DONE 2026-11-26)
+
+Built as planned: `events.dismissed_at`, `structure_names(structure_id, name)`, `Store.dismissMail`, `linkMail`, `removeStructureName`, `otherNames`; `matchStructure` also checks `otherNames`. Any reading with maintenance above 0 dismisses that structure's earlier empty-pool mails. Linking a mail older than the structure's entry ties it but changes nothing and dismisses it. The Dashboard banner has Dismiss and tells unmatched mails what to do; each structure row lists "also matches mail ..." names with ✕ (asks first) to undo a wrong link.
+
+Problem found in testing: a "maintenance pool empty" mail that matches no structure keeps the Dashboard banner up for 7 days, and the game sends no "pool refilled" mail.
+
+- **Dismiss**: ✕ on the banner and Dismiss on the mail row; new `events.dismissed_at`. Dismissed rows stay in "From your mail", greyed.
+- Saving a maintenance reading above 0 dismisses that structure's open maintenance mails.
+- **Link to…** on unmatched mail rows: pick the structure, apply the hook, and save the mail's name as another name for it (`structure_names`, like inventory aliases), so later mails match. This also covers a structure renamed in game (no mail is sent for a rename).
+- Unmatched banner text points to adding the structure or dismissing.
+
+---
+
+## Step 7: structure transfers (planned)
+
+How it works in game (owner, 2026-11-26): one character with all the harvester buffs and expertise drops elite harvesters, then `/transferStructure <player>` hands each one to another character who has the lots and is close by. The bonuses stay with the harvester. Widely used.
+
+- The **owner** gets all later mail for the structure (maintenance empty, factory finished). The dropper gets every **Construction Complete** mail (so one character can get all of them, for structures on several characters).
+- **No mail for a transfer**, and none for a rename. Only the owner can name a structure; the name moves with it, and the new owner may rename it.
+
+Plan:
+1. A structure's Character means its **owner** (who holds its lots). Lots cards and checks already use it.
+2. **Transfer** button per structure: pick the new owner, the usual over-10-lots check on that character, and a timestamped `structure_owners` history row (like the state history). Manual, since nothing in the mail shows a transfer.
+3. **Add from a Construction Complete mail** gets an **Owner** field (default: the dropper), so a harvester dropped for another character is added straight to its owner. The form suggests a unique custom name, which is what mail matching relies on.
+4. **Matching**: same owner first (correct after a transfer, since the owner gets the mail). If nothing matches, try all structures; a single unique match is applied and the mail row offers "Owned by X in the app, mail went to Y: record a transfer?". Two or more fits still change nothing.
+5. **Lots check on Construction Complete**: the dropper's count from the mail is compared only when no transfer involving that character was recorded after the mail; otherwise it is left out instead of warning about a missing structure.
+6. Owners may be characters whose mail folder is not on this PC; their lots and structures still count.
+
+Bonuses need nothing: readings are the game's actual values, so a transferred harvester's numbers already include them.
+
+---
+
 ## Questions for the owner to check in game (before Step 4)
 
 1. **ANSWERED 2026-11-26:** a turned-off harvester does not use power.

@@ -85,6 +85,13 @@ export default function Structures({ version, characters, onChange }: Props) {
             ...(t ? { typeId: t.id, kind: t.kind, lots: t.lots, maintPerHour: t.maintPerHour, powerPerHour: t.powerPerHour, storage: t.storage, efficiency: t.efficiency } : {})
           })
         }}
+        onDismiss={async (m) => { await api.dismissMail(m.id); onChange() }}
+        onLink={async (m, id) => {
+          const s = list.find((x) => x.id === id)!
+          await api.linkMail(m.id, id)
+          setNotice(`Linked to ${s.name}. Later mails named "${m.name}" will match it too.`)
+          onChange()
+        }}
       />
 
       {people.length > 0 && (
@@ -120,6 +127,13 @@ export default function Structures({ version, characters, onChange }: Props) {
                     <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
                       {s.typeName ?? KIND_LABEL[s.kind]} · {s.lots} lot{s.lots === 1 ? '' : 's'}
                     </div>
+                    {s.otherNames.map((n) => (
+                      <div key={n} className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                        also matches mail "{n}"{' '}
+                        <button className="btn ghost" style={{ padding: '0 6px', fontSize: 11 }} title="Stop matching this name"
+                          onClick={async () => { if (confirm(`Stop matching mails named "${n}" to ${s.name}?`)) { await api.removeStructureName(s.id, n); onChange() } }}>✕</button>
+                      </div>
+                    ))}
                     {s.kind === 'harvester' && (
                       <div style={{ fontSize: 12, marginTop: 2 }}>
                         {s.resource
@@ -248,7 +262,10 @@ export default function Structures({ version, characters, onChange }: Props) {
  * player can rename the structure in the app to the name the game uses. Construction mails offer "Add" and
  * compare the game's lots left with the app's count (only the newest one per character, since older ones are stale).
  */
-function MailPanel({ mails, list, used, onAdd }: { mails: StructureMail[]; list: Structure[]; used: Map<string, number>; onAdd: (m: StructureMail) => void }) {
+function MailPanel({ mails, list, used, onAdd, onDismiss, onLink }: {
+  mails: StructureMail[]; list: Structure[]; used: Map<string, number>
+  onAdd: (m: StructureMail) => void; onDismiss: (m: StructureMail) => void; onLink: (m: StructureMail, structureId: number) => void
+}) {
   if (!mails.length) return null
   const newestBuild = new Map<string, number>()
   for (const m of mails) if (m.kind === 'construction' && !newestBuild.has(m.character)) newestBuild.set(m.character, m.id)
@@ -276,12 +293,23 @@ function MailPanel({ mails, list, used, onAdd }: { mails: StructureMail[]; list:
         <table>
           <tbody>
             {mails.map((m) => (
-              <tr key={m.id}>
+              <tr key={m.id} style={m.dismissed ? { opacity: 0.55 } : undefined}>
                 <td className="muted" style={{ whiteSpace: 'nowrap' }}>{ago(m.ts)}</td>
                 <td>{m.character}</td>
-                <td style={m.kind === 'structure_maint' ? { color: 'var(--bad)' } : undefined}>{text(m)}</td>
-                <td style={{ textAlign: 'right' }}>
-                  {m.kind === 'construction' && <button className="btn ghost" onClick={() => onAdd(m)}>Add</button>}
+                <td style={m.kind === 'structure_maint' && !m.dismissed ? { color: 'var(--bad)' } : undefined}>
+                  {text(m)}{m.dismissed && <span className="muted"> (dismissed)</span>}
+                </td>
+                <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {m.kind !== 'construction' && m.structureId == null && list.length > 0 && (
+                    <select value="" title="Which structure is this mail about? Its name is saved so later mails match." onChange={(e) => e.target.value && onLink(m, Number(e.target.value))}>
+                      <option value="">Link to…</option>
+                      {list.filter((s) => m.kind !== 'factory_done' || s.kind === 'factory').map((s) => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.character})</option>
+                      ))}
+                    </select>
+                  )}{' '}
+                  {m.kind === 'construction' && <button className="btn ghost" onClick={() => onAdd(m)}>Add</button>}{' '}
+                  {!m.dismissed && <button className="btn ghost" onClick={() => onDismiss(m)}>Dismiss</button>}
                 </td>
               </tr>
             ))}

@@ -260,3 +260,54 @@ describe('Structure mails (Step 5)', () => {
     expect(s.structureMails()).toMatchObject([{ kind: 'construction', name: 'Elite Mineral Harvester', lotsLeft: 4, structureId: null }])
   })
 })
+
+describe('Clearing structure notices (Step 6)', () => {
+  const base = { typeId: null, planet: 'Talus', notes: '', storage: null, efficiency: null }
+  const later = () => Math.floor(Date.now() / 1000) + 60
+  const add = (s: Store, name: string) => s.saveStructure({ ...base, character: 'Testchar', name, kind: 'factory', lots: 1, maintPerHour: 20, powerPerHour: 50, state: 'running' })
+  const maintMail = (id: string, name: string, ts: number): ParsedMail => ({ mailId: id, timestamp: ts, kind: 'structure_maint', structure: name, planet: 'talus' })
+
+  it('dismisses a mail by hand', () => {
+    const s = new Store(':memory:')
+    s.insertEvent('Testchar', maintMail('m1', 'Equipment Factory', later()))
+    const [m] = s.structureMails()
+    expect(m!.dismissed).toBe(false)
+    s.dismissMail(m!.id)
+    expect(s.structureMails()[0]!.dismissed).toBe(true)
+  })
+
+  it('a maintenance reading above 0 dismisses earlier empty-pool mails for that structure', () => {
+    const s = new Store(':memory:')
+    const id = add(s, 'Equipment Factory')
+    const ts = later()
+    s.insertEvent('Testchar', maintMail('m1', 'Equipment Factory', ts))
+    expect(s.structureMails()[0]!.dismissed).toBe(false)
+    s.addReading(id, { surplusMaint: 5000, surplusPower: null, extractionRate: null, hopperPct: null }, ts + 10)
+    expect(s.structureMails()[0]!.dismissed).toBe(true)
+  })
+
+  it('linking an unmatched mail applies it and saves the name for later mails', () => {
+    const s = new Store(':memory:')
+    const id = add(s, 'Gear Maker')
+    s.insertEvent('Testchar', maintMail('m1', 'Equipment Factory', later()))
+    const [m] = s.structureMails()
+    expect(m!.structureId).toBeNull()
+    s.linkMail(m!.id, id)
+    const g = s.listStructures()[0]!
+    expect(g.otherNames).toEqual(['Equipment Factory'])
+    expect(g.latest.maint?.value).toBe(0)
+    s.insertEvent('Testchar', { mailId: 'f1', timestamp: later() + 5, kind: 'factory_done', structure: 'Equipment Factory' })
+    expect(s.listStructures()[0]!.state).toBe('idle') // matched by the saved name
+    s.removeStructureName(id, 'Equipment Factory')
+    expect(s.listStructures()[0]!.otherNames).toEqual([])
+  })
+
+  it('linking a mail older than the structure changes nothing and dismisses it', () => {
+    const s = new Store(':memory:')
+    s.insertEvent('Testchar', maintMail('old', 'Equipment Factory', Math.floor(Date.now() / 1000) - 86400))
+    const id = add(s, 'Gear Maker')
+    s.linkMail(s.structureMails()[0]!.id, id)
+    expect(s.listStructures()[0]!.latest.maint).toBeNull()
+    expect(s.structureMails()[0]).toMatchObject({ structureId: id, dismissed: true })
+  })
+})

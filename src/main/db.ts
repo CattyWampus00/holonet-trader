@@ -119,10 +119,15 @@ export class Store {
   /** Structure mails (Step 5): the name in the mail, the lots left (Construction Complete) and the matched structure. */
   private addStructureMailColumns(): void {
     const cols = this.db.prepare('PRAGMA table_info(events)').all() as { name: string }[]
-    if (cols.some((c) => c.name === 'structure')) return
-    this.db.exec('ALTER TABLE events ADD COLUMN structure TEXT')
-    this.db.exec('ALTER TABLE events ADD COLUMN lots_left INTEGER')
-    this.db.exec('ALTER TABLE events ADD COLUMN structure_id INTEGER')
+    if (!cols.some((c) => c.name === 'structure')) {
+      this.db.exec('ALTER TABLE events ADD COLUMN structure TEXT')
+      this.db.exec('ALTER TABLE events ADD COLUMN lots_left INTEGER')
+      this.db.exec('ALTER TABLE events ADD COLUMN structure_id INTEGER')
+    }
+    // Step 6: when the player dismissed a structure notice (NULL = still showing).
+    if (!cols.some((c) => c.name === 'dismissed_at')) this.db.exec('ALTER TABLE events ADD COLUMN dismissed_at INTEGER')
+    this.db.exec(`CREATE TABLE IF NOT EXISTS structure_names(
+      structure_id INTEGER NOT NULL REFERENCES structures(id) ON DELETE CASCADE, name TEXT NOT NULL, PRIMARY KEY(structure_id, name))`)
   }
 
   // ---- settings -----------------------------------------------------------
@@ -191,32 +196,83 @@ export class Store {
    */
   private applyStructureMail(eventId: number, character: string, p: ParsedMail): void {
     if (p.kind === 'construction') return
-    const list = this.db.prepare(`SELECT s.id, s.character, s.name, s.planet, s.kind, s.created_ts, t.name AS typeName
+    const id = matchStructure(this.matchCandidates(), { character, name: p.structure!, planet: p.planet, kind: p.kind === 'factory_done' ? 'factory' : undefined })
+    if (id != null) this.applyMailTo(eventId, id)
+  }
+
+  /** Structures with their extra mail names, for {@link matchStructure}. */
+  private matchCandidates() {
+    const list = this.db.prepare(`SELECT s.id, s.character, s.name, s.planet, s.kind, t.name AS typeName
                                   FROM structures s LEFT JOIN machine_types t ON t.id = s.type_id`).all() as
-      { id: number; character: string; name: string; planet: string; kind: StructureKind; created_ts: number; typeName: string | null }[]
-    const id = matchStructure(list, { character, name: p.structure!, planet: p.planet, kind: p.kind === 'factory_done' ? 'factory' : undefined })
-    if (id == null) return
+      { id: number; character: string; name: string; planet: string; kind: StructureKind; typeName: string | null }[]
+    return list.map((s) => ({ ...s, otherNames: this.otherNames(s.id) }))
+  }
+
+  /**
+   * Tie a structure mail to a structure and do what the mail means: a finished factory that is Running goes Idle,
+   * an empty maintenance pool gets a 0 reading. A mail from before the structure was added to the app is history:
+   * it is tied but changes nothing, and it is dismissed so it does not raise the banner.
+   */
+  private applyMailTo(eventId: number, id: number): void {
+    const e = this.db.prepare('SELECT kind, ts FROM events WHERE id=?').get(eventId) as { kind: string; ts: number } | undefined
+    const s = this.db.prepare('SELECT created_ts FROM structures WHERE id=?').get(id) as { created_ts: number } | undefined
+    if (!e || !s) return
     this.db.prepare('UPDATE events SET structure_id=? WHERE id=?').run(id, eventId)
-    const s = list.find((x) => x.id === id)!
-    if (p.timestamp < s.created_ts) return
-    if (p.kind === 'factory_done') {
+    if (e.ts < s.created_ts) {
+      this.db.prepare('UPDATE events SET dismissed_at=COALESCE(dismissed_at, ?) WHERE id=?').run(Math.floor(Date.now() / 1000), eventId)
+      return
+    }
+    if (e.kind === 'factory_done') {
       const cur = this.db.prepare('SELECT state, ts FROM structure_states WHERE structure_id=? ORDER BY ts DESC, id DESC LIMIT 1').get(id) as
         { state: StructureState; ts: number } | undefined
-      if (cur?.state === 'running' && cur.ts <= p.timestamp) this.setStructureState(id, 'idle', p.timestamp)
-    } else if (p.kind === 'structure_maint') {
-      this.addReading(id, { surplusMaint: 0, surplusPower: null, extractionRate: null, hopperPct: null }, p.timestamp)
+      if (cur?.state === 'running' && cur.ts <= e.ts) this.setStructureState(id, 'idle', e.ts)
+    } else if (e.kind === 'structure_maint') {
+      this.addReading(id, { surplusMaint: 0, surplusPower: null, extractionRate: null, hopperPct: null }, e.ts)
     }
+  }
+
+  /**
+   * The player says which structure an unmatched mail is about. The mail is applied, and its name is saved as
+   * another name for that structure, so later mails with that name match on their own (also covers a rename in
+   * game, which sends no mail).
+   */
+  linkMail(eventId: number, structureId: number): void {
+    const e = this.db.prepare('SELECT structure FROM events WHERE id=?').get(eventId) as { structure: string | null } | undefined
+    if (!e?.structure) return
+    this.transaction(() => {
+      this.applyMailTo(eventId, structureId)
+      const s = this.db.prepare('SELECT name FROM structures WHERE id=?').get(structureId) as { name: string } | undefined
+      if (s && itemKey(s.name) !== itemKey(e.structure!)) {
+        this.db.prepare('INSERT OR IGNORE INTO structure_names(structure_id, name) VALUES(?,?)').run(structureId, e.structure!.replace(/\s+/g, ' ').trim())
+      }
+    })
+  }
+
+  /** Extra names (from linked mails) that a structure also matches. */
+  otherNames(structureId: number): string[] {
+    return (this.db.prepare('SELECT name FROM structure_names WHERE structure_id=? ORDER BY name COLLATE NOCASE').all(structureId) as { name: string }[]).map((r) => r.name)
+  }
+
+  /** Undo a wrong link: the structure stops matching this name. Mails already tied to it stay tied. */
+  removeStructureName(structureId: number, name: string): void {
+    this.db.prepare('DELETE FROM structure_names WHERE structure_id=? AND name=?').run(structureId, name)
+  }
+
+  /** Hide a structure mail from the banner (it stays in the mail list, greyed). */
+  dismissMail(eventId: number): void {
+    this.db.prepare('UPDATE events SET dismissed_at=COALESCE(dismissed_at, ?) WHERE id=?').run(Math.floor(Date.now() / 1000), eventId)
   }
 
   /** Structure mails from the last `days` days, newest first. */
   structureMails(days = 14): StructureMail[] {
     const since = Math.floor(Date.now() / 1000) - days * 86400
-    const rows = this.db.prepare(`SELECT id, character, ts, kind, structure, planet, lots_left, structure_id FROM events
+    const rows = this.db.prepare(`SELECT id, character, ts, kind, structure, planet, lots_left, structure_id, dismissed_at FROM events
                                   WHERE kind IN ('factory_done','structure_maint','construction') AND ts >= ? ORDER BY ts DESC LIMIT 50`)
       .all(since) as Record<string, unknown>[]
     return rows.map((r) => ({
       id: r.id as number, character: r.character as string, ts: r.ts as number, kind: r.kind as StructureMail['kind'],
-      name: r.structure as string, planet: (r.planet as string | null) ?? null, lotsLeft: num(r.lots_left), structureId: num(r.structure_id)
+      name: r.structure as string, planet: (r.planet as string | null) ?? null, lotsLeft: num(r.lots_left), structureId: num(r.structure_id),
+      dismissed: r.dismissed_at != null
     }))
   }
 
@@ -338,6 +394,7 @@ export class Store {
           ? { ts: rd.ts as number, surplusMaint: num(rd.surplus_maint), surplusPower: num(rd.surplus_power), extractionRate: num(rd.extraction_rate), hopperPct: num(rd.hopper_pct) }
           : null,
         resource: r.kind === 'harvester' ? this.currentResource(r.id as number) : null,
+        otherNames: this.otherNames(r.id as number),
         history: this.structureStates(r.id as number),
         latest: {
           maint: this.latestValue(r.id as number, 'surplus_maint'),
@@ -394,6 +451,11 @@ export class Store {
     if ([r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct].every((v) => v == null)) return
     this.db.prepare('INSERT INTO structure_readings(structure_id,ts,surplus_maint,surplus_power,extraction_rate,hopper_pct) VALUES(?,?,?,?,?,?)')
       .run(id, ts, r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct)
+    // A pool with credits in it again means the "maintenance pool empty" notices up to now are dealt with.
+    if (r.surplusMaint != null && r.surplusMaint > 0) {
+      this.db.prepare(`UPDATE events SET dismissed_at=? WHERE kind='structure_maint' AND structure_id=? AND dismissed_at IS NULL AND ts <= ?`)
+        .run(Math.floor(Date.now() / 1000), id, ts)
+    }
   }
 
   // ---- harvester resources and hoppers -------------------------------------
