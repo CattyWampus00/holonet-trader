@@ -84,7 +84,8 @@ function registerIpc() {
     lowThreshold: globalThreshold(),
     location: currentLocation(),
     theme: savedTheme(),
-    autoUpdate: autoUpdateOn()
+    autoUpdate: autoUpdateOn(),
+    version: app.getVersion() // from package.json, so the installed app shows the version it was built as
   }))
   ipcMain.handle('settings:setAutoUpdate', (_e, on: unknown) => store.setSetting('autoUpdate', on === false ? '0' : '1'))
   ipcMain.handle('settings:setTheme', (_e, id: unknown) => {

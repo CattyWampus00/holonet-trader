@@ -51,6 +51,7 @@ export default function App() {
         <div className="spacer" />
         <div className="muted" style={{ fontSize: 12, padding: '0 8px' }}>
           {settings.location ? `${settings.location.characters.length} characters watched` : 'Not connected'}
+          <div style={{ marginTop: 4 }}>Version {settings.version}</div>
         </div>
       </nav>
       <main>

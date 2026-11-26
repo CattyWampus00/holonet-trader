@@ -1,7 +1,7 @@
 import type { ThemeId } from '@shared/themes'
 import type { CustomerRow, DetectedLocation, InventoryItem, PriceRow, PriceSeries, SaleRow, ScanResult } from '@shared/types'
 
-export interface Settings { serverDir: string | null; lowThreshold: number; location: DetectedLocation | null; theme: ThemeId; autoUpdate: boolean }
+export interface Settings { serverDir: string | null; lowThreshold: number; location: DetectedLocation | null; theme: ThemeId; autoUpdate: boolean; version: string }
 export interface Row { name: string; sales: number; revenue: number; units?: number }
 export interface Summary {
   totals: { sales: number; revenue: number; units: number }
