@@ -1,6 +1,6 @@
 {
   "name": "holonet-trader",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Sales and inventory tracker for SWG Legends, built on the game's /mailsave files",
   "main": "./out/main/index.js",
   "author": "HoloNet Trader contributors",
