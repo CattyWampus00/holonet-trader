@@ -206,6 +206,39 @@ export class Store {
     for (const e of rows) this.applySaleToStock(e.id, itemId, e.quantity, e.ts)
   }
 
+  /** Sale names linked to an item by hand (aliases), with how often each sold. The item's own name is not listed. */
+  linkedNames(itemId: number): { key: string; name: string; sales: number }[] {
+    return this.db
+      .prepare(`SELECT a.alias_key AS key,
+                       COALESCE((SELECT MIN(item_name) FROM events WHERE item_key = a.alias_key), a.alias_key) AS name,
+                       (SELECT COUNT(*) FROM events WHERE item_key = a.alias_key AND kind = 'sale') AS sales
+                FROM aliases a WHERE a.item_id = ? ORDER BY name COLLATE NOCASE`)
+      .all(itemId) as never
+  }
+
+  /**
+   * Undo a link made by mistake: the exact reverse of linkAlias. Stock that the linked sales took off the item is
+   * given back, those sales go back to "not matched", and the alias is forgotten so future sales stay unmatched.
+   * Returns how many units were given back (0 when nothing had been taken).
+   */
+  unlinkAlias(key: string): number {
+    const alias = this.db.prepare('SELECT item_id FROM aliases WHERE alias_key=?').get(key) as { item_id: number } | undefined
+    if (!alias) return 0
+    const itemId = alias.item_id
+    return this.transaction(() => {
+      const moves = this.db
+        .prepare(`SELECT m.id, m.delta FROM stock_moves m JOIN events e ON e.id = m.event_id
+                  WHERE e.item_key = ? AND m.item_id = ? AND m.reason = 'sale'`)
+        .all(key, itemId) as { id: number; delta: number }[]
+      const giveBack = moves.reduce((n, m) => n - m.delta, 0) // sale moves are negative
+      if (giveBack > 0) this.db.prepare('UPDATE items SET on_hand = on_hand + ? WHERE id=?').run(giveBack, itemId)
+      for (const m of moves) this.db.prepare('DELETE FROM stock_moves WHERE id=?').run(m.id)
+      this.db.prepare('UPDATE events SET item_id=NULL WHERE item_key=? AND item_id=?').run(key, itemId)
+      this.db.prepare('DELETE FROM aliases WHERE alias_key=?').run(key)
+      return giveBack
+    })
+  }
+
   // ---- queries for the UI -------------------------------------------------
   listEvents(f: { kinds?: string[]; from?: number; to?: number; search?: string; character?: string; limit?: number }): SaleRow[] {
     const where: string[] = []

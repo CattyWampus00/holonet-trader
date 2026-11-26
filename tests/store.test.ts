@@ -38,6 +38,28 @@ describe('Store', () => {
     expect(s.getItem(id)!.onHand).toBe(0)
   })
 
+  it('undoes a wrong link: stock comes back and the sales are unmatched again', () => {
+    const s = new Store(':memory:')
+    const id = s.saveItem({ name: 'Rifle Scope', onHand: 10, costEach: 0, lowThreshold: null, notes: '' })
+    const other = s.saveItem({ name: 'Pistol Grip', onHand: 5, costEach: 0, lowThreshold: null, notes: '' })
+    s.insertEvent('A', sale('1', future(), 'Pistol Barrel', 2, 100))
+    s.linkAlias('pistol barrel', id) // the mis-click
+    s.insertEvent('A', sale('2', future(), 'Pistol Barrel', 3, 100)) // later sale follows the wrong link
+    expect(s.getItem(id)!.onHand).toBe(5)
+    expect(s.linkedNames(id)).toEqual([{ key: 'pistol barrel', name: 'Pistol Barrel', sales: 2 }])
+    expect(s.linkedNames(other)).toEqual([])
+
+    expect(s.unlinkAlias('pistol barrel')).toBe(5)
+    expect(s.getItem(id)!.onHand).toBe(10)
+    expect(s.linkedNames(id)).toEqual([])
+    expect(s.unmatched()).toMatchObject([{ key: 'pistol barrel', sales: 2, units: 5 }])
+    expect(s.unlinkAlias('pistol barrel')).toBe(0) // second undo does nothing
+
+    s.linkAlias('pistol barrel', other) // the right link works afterwards
+    expect(s.getItem(other)!.onHand).toBe(0)
+    expect(s.getItem(id)!.onHand).toBe(10)
+  })
+
   it('summarises revenue', () => {
     const s = new Store(':memory:')
     s.insertEvent('A', sale('1', 1000, 'X', 2, 500))

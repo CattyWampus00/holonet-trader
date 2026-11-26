@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { cleanItemName, newItemName } from '@shared/mailParser'
 import type { InventoryItem } from '@shared/types'
 import { getStockStatus } from '@shared/stock'
-import { api, credits, type ItemInput, type Settings, type Unmatched } from '../api'
+import { api, credits, type ItemInput, type LinkedName, type Settings, type Unmatched } from '../api'
 
 interface Props { version: number; items: InventoryItem[]; settings: Settings; onChange: () => void }
 const blank: ItemInput = { name: '', onHand: 0, costEach: 0, lowThreshold: null, notes: '' }
@@ -79,13 +79,39 @@ export default function Inventory({ version, items, settings, onChange }: Props)
       </div>
 
       {editing && <EditModal item={editing} onClose={() => setEditing(null)} onSave={async (i) => { await api.saveItem(i); setEditing(null); onChange() }}
-        onDelete={editing.id ? async () => { await api.deleteItem(editing.id!); setEditing(null); onChange() } : undefined} />}
+        onDelete={editing.id ? async () => { await api.deleteItem(editing.id!); setEditing(null); onChange() } : undefined} onChanged={onChange} />}
       {adjusting && <AdjustModal item={adjusting} onClose={() => setAdjusting(null)} onSave={async (d, reason) => { await api.adjustStock(adjusting.id, d, reason); setAdjusting(null); onChange() }} />}
     </>
   )
 }
 
-function EditModal({ item, onClose, onSave, onDelete }: { item: ItemInput; onClose: () => void; onSave: (i: ItemInput) => void; onDelete?: () => void }) {
+/** Sale names that were linked to this item by hand, each with an Unlink button to undo a wrong link. */
+function LinkedNames({ itemId, onUnlinked }: { itemId: number; onUnlinked: (givenBack: number) => void }) {
+  const [links, setLinks] = useState<LinkedName[]>([])
+  const load = () => api.linkedNames(itemId).then(setLinks)
+  useEffect(() => { load() }, [itemId])
+  if (!links.length) return null
+  const unlink = async (l: LinkedName) => {
+    const name = cleanItemName(l.name)
+    if (!confirm(`Unlink "${name}" from this item?\n\nIts ${l.sales} sale(s) go back to "Sales not matched", and any stock they took off this item is given back.`)) return
+    const givenBack = await api.unlinkAlias(l.key)
+    await load()
+    onUnlinked(givenBack)
+  }
+  return (
+    <>
+      <label>Sale names linked to this item</label>
+      {links.map((l) => (
+        <div key={l.key} className="row" style={{ justifyContent: 'space-between', margin: '4px 0' }}>
+          <span>{cleanItemName(l.name)} <span className="muted">({l.sales} sale{l.sales === 1 ? '' : 's'})</span></span>
+          <button className="btn ghost" onClick={() => unlink(l)}>Unlink</button>
+        </div>
+      ))}
+    </>
+  )
+}
+
+function EditModal({ item, onClose, onSave, onDelete, onChanged }: { item: ItemInput; onClose: () => void; onSave: (i: ItemInput) => void; onDelete?: () => void; onChanged: () => void }) {
   const [f, setF] = useState(item)
   const num = (v: string) => Math.max(0, Math.floor(Number(v) || 0))
   return (
@@ -102,6 +128,7 @@ function EditModal({ item, onClose, onSave, onDelete }: { item: ItemInput; onClo
         <input type="number" min={0} value={f.lowThreshold ?? ''} onChange={(e) => setF({ ...f, lowThreshold: e.target.value === '' ? null : num(e.target.value) })} />
         <label>Notes</label>
         <input value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} />
+        {item.id && <LinkedNames itemId={item.id} onUnlinked={(givenBack) => { setF((p) => ({ ...p, onHand: p.onHand + givenBack })); onChanged() }} />}
         <div className="row" style={{ marginTop: 16, justifyContent: 'space-between' }}>
           <span>{onDelete && <button className="btn danger" onClick={() => confirm('Delete this item?') && onDelete()}>Delete</button>}</span>
           <span><button className="btn ghost" onClick={onClose}>Cancel</button>{' '}<button className="btn" disabled={!f.name.trim()} onClick={() => onSave(f)}>Save</button></span>

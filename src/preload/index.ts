@@ -25,6 +25,8 @@ const api = {
   adjustStock: (id: number, delta: number, reason: string) => call('inventory:adjust', id, delta, reason),
   unmatched: () => call('unmatched:list'),
   linkAlias: (key: string, itemId: number) => call('unmatched:link', key, itemId),
+  linkedNames: (itemId: number) => call('aliases:list', itemId),
+  unlinkAlias: (key: string) => call('aliases:unlink', key),
   onDataChanged: (cb: () => void) => {
     const h = () => cb()
     ipcRenderer.on('data-changed', h)
