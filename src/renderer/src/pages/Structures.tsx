@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { HarvesterResource, MachineType, MachineTypeInput, Structure, StructureInput, StructureReading } from '@shared/types'
+import type { HarvesterResource, MachineType, MachineTypeInput, Structure, StructureInput, StructureMail, StructureReading } from '@shared/types'
 import {
   attention, type Countdown, forecast, formatHours, KIND_LABEL, lotsAfter, lotsByCharacter, MAX_LOTS, parseOperateResource, STATE_LABEL,
   type StructureKind, type StructureState, upkeepPerDay
@@ -38,8 +38,10 @@ export default function Structures({ version, characters, onChange }: Props) {
   useEffect(() => {
     api.machineTypes().then(setTypes)
     api.structures().then(setList)
+    api.structureMails().then(setMails)
   }, [version])
   const now = useNow()
+  const [mails, setMails] = useState<StructureMail[]>([])
 
   const used = lotsByCharacter(list)
   const people = [...new Set([...list.map((s) => s.character)])].sort((a, b) => a.localeCompare(b))
@@ -70,6 +72,20 @@ export default function Structures({ version, characters, onChange }: Props) {
           <button className="btn ghost" onClick={() => setNotice('')}>OK</button>
         </div>
       )}
+
+      <MailPanel
+        mails={mails}
+        list={list}
+        used={used}
+        onAdd={(m) => {
+          // Pre-fill from the mail; a machine type with the same name fills in its stats too.
+          const t = types.find((x) => x.name.toLowerCase() === m.name.toLowerCase())
+          setEditing({
+            ...newStructure(), character: m.character, name: m.name,
+            ...(t ? { typeId: t.id, kind: t.kind, lots: t.lots, maintPerHour: t.maintPerHour, powerPerHour: t.powerPerHour, storage: t.storage, efficiency: t.efficiency } : {})
+          })
+        }}
+      />
 
       {people.length > 0 && (
         <div className="stats" style={{ marginBottom: 16 }}>
@@ -223,6 +239,55 @@ export default function Structures({ version, characters, onChange }: Props) {
           onSave={async (r) => { await api.addReading(reading.id, r); setReading(null); onChange() }}
         />
       )}
+    </>
+  )
+}
+
+/**
+ * Structure mails from the last 14 days. Matched mails say what they changed; unmatched ones say so, so the
+ * player can rename the structure in the app to the name the game uses. Construction mails offer "Add" and
+ * compare the game's lots left with the app's count (only the newest one per character, since older ones are stale).
+ */
+function MailPanel({ mails, list, used, onAdd }: { mails: StructureMail[]; list: Structure[]; used: Map<string, number>; onAdd: (m: StructureMail) => void }) {
+  if (!mails.length) return null
+  const newestBuild = new Map<string, number>()
+  for (const m of mails) if (m.kind === 'construction' && !newestBuild.has(m.character)) newestBuild.set(m.character, m.id)
+  const nameOf = (m: StructureMail) => list.find((s) => s.id === m.structureId)?.name ?? m.name
+  const text = (m: StructureMail) => {
+    if (m.kind === 'factory_done') {
+      return m.structureId != null ? `${nameOf(m)} stopped making items. Set to Idle.` : `A factory named "${m.name}" stopped making items. No structure in the app has that name.`
+    }
+    if (m.kind === 'structure_maint') {
+      return m.structureId != null
+        ? `${nameOf(m)} has an empty maintenance pool. The game is taking upkeep from your bank.`
+        : `"${m.name}"${m.planet ? ` on ${m.planet}` : ''} has an empty maintenance pool (bank is paying). No structure in the app matched it.`
+    }
+    let t = `Construction of ${m.name} complete. The game says ${m.lotsLeft} lot${m.lotsLeft === 1 ? '' : 's'} left.`
+    if (newestBuild.get(m.character) === m.id && m.lotsLeft != null) {
+      const appLeft = MAX_LOTS - (used.get(m.character) ?? 0)
+      if (appLeft !== m.lotsLeft) t += ` The app counts ${appLeft} left, so a structure may be missing or not packed up here.`
+    }
+    return t
+  }
+  return (
+    <>
+      <h3>From your mail</h3>
+      <div className="panel scroll" style={{ marginBottom: 16, maxHeight: 220 }}>
+        <table>
+          <tbody>
+            {mails.map((m) => (
+              <tr key={m.id}>
+                <td className="muted" style={{ whiteSpace: 'nowrap' }}>{ago(m.ts)}</td>
+                <td>{m.character}</td>
+                <td style={m.kind === 'structure_maint' ? { color: 'var(--bad)' } : undefined}>{text(m)}</td>
+                <td style={{ textAlign: 'right' }}>
+                  {m.kind === 'construction' && <button className="btn ghost" onClick={() => onAdd(m)}>Add</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   )
 }

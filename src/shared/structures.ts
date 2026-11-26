@@ -164,6 +164,39 @@ export function upkeepPerDay(list: { maintPerHour: number | null; state: Structu
   return list.reduce((sum, s) => (usesLots(s.state) && s.maintPerHour ? sum + s.maintPerHour * 24 : sum), 0)
 }
 
+// ---- mail hooks (Step 5) ----------------------------------------------------
+
+/** What a structure mail tells us, for matching it to one of the app's structures. */
+export interface MailClue {
+  /** The character whose mail folder it came from. */
+  character: string
+  /** The structure's name as the mail shows it (a custom name, or the machine name such as "Elite Mineral Harvester"). */
+  name: string
+  /** Only the maintenance mail names a planet (lower-case, e.g. "tatooine"). */
+  planet?: string
+  /** Only the factory mail says the kind for sure. */
+  kind?: StructureKind
+}
+
+/**
+ * Which of the app's structures a mail is about, or null when it can't be told.
+ * Returning null is safe: the mail is still listed as a notice, it just changes nothing.
+ */
+export function matchStructure(
+  list: { id: number; character: string; name: string; typeName: string | null; planet: string; kind: StructureKind }[],
+  clue: MailClue
+): number | null {
+  const norm = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
+  const want = norm(clue.name)
+  const mine = list.filter((s) => norm(s.character) === norm(clue.character) && (!clue.kind || s.kind === clue.kind))
+  // 1. The custom name the player typed. 2. The machine type's name, narrowed by planet when the mail gives one.
+  // Two or more still fitting means the mail can't say which one, so nothing is changed (null).
+  const byName = mine.filter((s) => norm(s.name) === want)
+  if (byName.length) return byName.length === 1 ? byName[0]!.id : null
+  const byType = mine.filter((s) => norm(s.typeName) === want && (!clue.planet || norm(s.planet) === norm(clue.planet)))
+  return byType.length === 1 ? byType[0]!.id : null
+}
+
 /**
  * Read the resource line of a harvester's Operate panel: `<Name>, a type of <Type>`
  * (for example `Carbigyfed, a type of Crism Siliclastic Ore`). Returns null when the line has another shape.

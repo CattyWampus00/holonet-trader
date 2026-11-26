@@ -3,14 +3,14 @@ import { DatabaseSync } from 'node:sqlite'
 import { summarizeCustomers, type SaleLine } from '../shared/customers'
 import { cleanItemName, itemKey } from '../shared/mailParser'
 import { classifyTrend, summarize, unitPrice } from '../shared/priceStats'
-import type { CustomerRow, HarvesterResource, InventoryItem, MachineType, MachineTypeInput, ParsedMail, PricePointRow, PriceRow, PriceSeries, SaleRow, Structure, StructureInput, StructureReading } from '../shared/types'
-import { resourceItemName, resourceKeyOf, type StructureKind, type StructureState } from '../shared/structures'
+import type { CustomerRow, HarvesterResource, InventoryItem, MachineType, MachineTypeInput, ParsedMail, PricePointRow, PriceRow, PriceSeries, SaleRow, Structure, StructureInput, StructureMail, StructureReading } from '../shared/types'
+import { matchStructure, resourceItemName, resourceKeyOf, type StructureKind, type StructureState } from '../shared/structures'
 
 /**
  * Bump this whenever the mail parser starts understanding mails it used to skip.
  * 2 = thousands separators: commas and dots in credits and item amounts (2026-11-17).
  */
-export const PARSER_VERSION = 2
+export const PARSER_VERSION = 3 // 3: structure mails (factory finished, structure maintenance empty, construction complete)
 
 export class Store {
   readonly db: DatabaseSync
@@ -67,6 +67,7 @@ export class Store {
     `)
     this.migratePowerupUses(path)
     this.addArchivedColumn()
+    this.addStructureMailColumns()
     this.rescanIfParserChanged()
   }
 
@@ -115,6 +116,15 @@ export class Store {
     if (!cols.some((c) => c.name === 'archived_at')) this.db.exec('ALTER TABLE items ADD COLUMN archived_at INTEGER')
   }
 
+  /** Structure mails (Step 5): the name in the mail, the lots left (Construction Complete) and the matched structure. */
+  private addStructureMailColumns(): void {
+    const cols = this.db.prepare('PRAGMA table_info(events)').all() as { name: string }[]
+    if (cols.some((c) => c.name === 'structure')) return
+    this.db.exec('ALTER TABLE events ADD COLUMN structure TEXT')
+    this.db.exec('ALTER TABLE events ADD COLUMN lots_left INTEGER')
+    this.db.exec('ALTER TABLE events ADD COLUMN structure_id INTEGER')
+  }
+
   // ---- settings -----------------------------------------------------------
   getSetting(key: string): string | null {
     const r = this.db.prepare('SELECT value FROM settings WHERE key=?').get(key) as { value: string } | undefined
@@ -157,17 +167,57 @@ export class Store {
     const itemId = key ? this.findItemId(key) : null
     const res = this.db
       .prepare(
-        `INSERT OR IGNORE INTO events(character,mail_id,ts,kind,vendor,item_name,item_key,quantity,uses,price,counterparty,city,planet,item_id)
-         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        `INSERT OR IGNORE INTO events(character,mail_id,ts,kind,vendor,item_name,item_key,quantity,uses,price,counterparty,city,planet,item_id,structure,lots_left)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .run(character, p.mailId, p.timestamp, p.kind, p.vendor ?? null, p.itemName ?? null, key, p.quantity ?? 1, p.uses ?? null, p.price ?? 0,
-        p.counterparty ?? null, p.city ?? null, p.planet ?? null, itemId)
+        p.counterparty ?? null, p.city ?? null, p.planet ?? null, itemId, p.structure ?? null, p.lotsLeft ?? null)
     if (res.changes === 0) return { inserted: false }
+    if (p.structure) this.applyStructureMail(Number(res.lastInsertRowid), character, p)
     if (p.kind === 'sale' && itemId !== null) {
       this.applySaleToStock(Number(res.lastInsertRowid), itemId, p.quantity ?? 1, p.timestamp)
       return { inserted: true, lowItemId: itemId }
     }
     return { inserted: true }
+  }
+
+  /**
+   * Step 5 mail hooks. The mail is matched to one of the app's structures (see `matchStructure`), then:
+   * - factory finished: a Running factory becomes Idle at the mail's time
+   * - structure maintenance empty: a maintenance reading of 0 at the mail's time
+   * - construction complete: nothing changes; the Structures tab offers to add it and compares lots
+   * Mails from before the structure was added to the app are listed but change nothing, so re-reading old
+   * mail can never rewrite a structure's history.
+   */
+  private applyStructureMail(eventId: number, character: string, p: ParsedMail): void {
+    if (p.kind === 'construction') return
+    const list = this.db.prepare(`SELECT s.id, s.character, s.name, s.planet, s.kind, s.created_ts, t.name AS typeName
+                                  FROM structures s LEFT JOIN machine_types t ON t.id = s.type_id`).all() as
+      { id: number; character: string; name: string; planet: string; kind: StructureKind; created_ts: number; typeName: string | null }[]
+    const id = matchStructure(list, { character, name: p.structure!, planet: p.planet, kind: p.kind === 'factory_done' ? 'factory' : undefined })
+    if (id == null) return
+    this.db.prepare('UPDATE events SET structure_id=? WHERE id=?').run(id, eventId)
+    const s = list.find((x) => x.id === id)!
+    if (p.timestamp < s.created_ts) return
+    if (p.kind === 'factory_done') {
+      const cur = this.db.prepare('SELECT state, ts FROM structure_states WHERE structure_id=? ORDER BY ts DESC, id DESC LIMIT 1').get(id) as
+        { state: StructureState; ts: number } | undefined
+      if (cur?.state === 'running' && cur.ts <= p.timestamp) this.setStructureState(id, 'idle', p.timestamp)
+    } else if (p.kind === 'structure_maint') {
+      this.addReading(id, { surplusMaint: 0, surplusPower: null, extractionRate: null, hopperPct: null }, p.timestamp)
+    }
+  }
+
+  /** Structure mails from the last `days` days, newest first. */
+  structureMails(days = 14): StructureMail[] {
+    const since = Math.floor(Date.now() / 1000) - days * 86400
+    const rows = this.db.prepare(`SELECT id, character, ts, kind, structure, planet, lots_left, structure_id FROM events
+                                  WHERE kind IN ('factory_done','structure_maint','construction') AND ts >= ? ORDER BY ts DESC LIMIT 50`)
+      .all(since) as Record<string, unknown>[]
+    return rows.map((r) => ({
+      id: r.id as number, character: r.character as string, ts: r.ts as number, kind: r.kind as StructureMail['kind'],
+      name: r.structure as string, planet: (r.planet as string | null) ?? null, lotsLeft: num(r.lots_left), structureId: num(r.structure_id)
+    }))
   }
 
   private applySaleToStock(eventId: number, itemId: number, qty: number, ts: number): void {

@@ -67,6 +67,19 @@ export function parseMail(raw: string): ParsedMail | null {
     }
     case 'Vendor maintenance pool empty!':
       return { ...base, kind: 'vendor_maint' }
+    case 'Manufacturing station finished': {
+      const m = /Your manufacturing station, (.+?), has stopped making items/s.exec(body)
+      return m ? { ...base, kind: 'factory_done', structure: m[1]!.trim() } : null
+    }
+    case 'Structure maintenance pool empty!': {
+      // "Your <name> (<x>, <y>  <planet>) has an empty maintenance pool." Coordinates may be negative.
+      const m = /Your (.+?) \(\s*-?[\d.,]+\s*,\s*-?[\d.,]+\s+(.+?)\s*\) has an empty maintenance pool/s.exec(body)
+      return m ? { ...base, kind: 'structure_maint', structure: m[1]!.trim(), planet: m[2] } : null
+    }
+    case 'Construction Complete': {
+      const m = /Construction of your (.+?) is now complete\.\s*You have (\d+) lots? remaining/s.exec(body)
+      return m ? { ...base, kind: 'construction', structure: m[1]!.trim(), lotsLeft: Number(m[2]) } : null
+    }
     default:
       return null
   }

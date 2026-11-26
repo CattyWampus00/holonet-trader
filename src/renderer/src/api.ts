@@ -1,5 +1,5 @@
 import type { ThemeId } from '@shared/themes'
-import type { CustomerRow, DetectedLocation, HarvesterResource, InventoryItem, MachineType, MachineTypeInput, PriceRow, PriceSeries, SaleRow, ScanResult, Structure, StructureInput, StructureReading } from '@shared/types'
+import type { CustomerRow, DetectedLocation, HarvesterResource, InventoryItem, MachineType, MachineTypeInput, PriceRow, PriceSeries, SaleRow, ScanResult, Structure, StructureInput, StructureMail, StructureReading } from '@shared/types'
 import type { StructureState } from '@shared/structures'
 
 export interface Settings { serverDir: string | null; lowThreshold: number; location: DetectedLocation | null; theme: ThemeId; autoUpdate: boolean; version: string }
@@ -35,6 +35,7 @@ export interface Api {
   priceList(from: number, to: number, character?: string): Promise<PriceRow[]>
   priceSeries(key: string, from: number, to: number, character?: string): Promise<PriceSeries>
   vendorAlerts(): Promise<VendorAlert[]>
+  structureMails(): Promise<StructureMail[]>
   listItems(): Promise<InventoryItem[]>
   saveItem(i: ItemInput): Promise<number>
   deleteItem(id: number): Promise<void>

@@ -155,6 +155,8 @@ Installation mail found in the owner's saved mail (subject counts, 2026-11-26): 
 
 Parser work follows the existing rule: pure parser functions with tests on hand-written fixtures (fake names).
 
+**DONE (2026-11-26).** Event kinds `factory_done`, `structure_maint`, `construction` (new `events` columns `structure`, `lots_left`, `structure_id`); `PARSER_VERSION` 3 makes the next scan re-read old mail once. `matchStructure` (`src/shared/structures.ts`) matches the same character's structure by custom name (case and spaces ignored), else by machine type name narrowed by planet; two or more fits = no match, so a mail never changes the wrong structure. Hooks run in `Store.insertEvent`: factory finished sets a Running factory to Idle at the mail time; empty maintenance adds a 0 reading. Mails older than the structure's entry change nothing. UI: "From your mail" panel on the Structures tab (last 14 days; Add button on construction mails, lots compared on the newest one per character) and a red bank-drain banner on the Dashboard until a newer reading shows the pool topped up.
+
 ---
 
 ## Questions for the owner to check in game (before Step 4)

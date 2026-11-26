@@ -19,6 +19,7 @@ const api = {
   priceSeries: (key: string, from: number, to: number, character?: string) => call('prices:series', key, from, to, character),
   customerList: (from: number, to: number, character?: string) => call('customers:list', from, to, character),
   vendorAlerts: () => call('vendorAlerts'),
+  structureMails: () => call('structureMails'),
   listItems: () => call('inventory:list'),
   saveItem: (item: unknown) => call('inventory:save', item),
   deleteItem: (id: number) => call('inventory:delete', id),

@@ -221,3 +221,42 @@ describe('Store structures', () => {
     expect(s.listStructures()).toEqual([])
   })
 })
+
+describe('Structure mails (Step 5)', () => {
+  const base = { typeId: null, planet: 'Naboo', notes: '', storage: null, efficiency: null }
+  const later = () => Math.floor(Date.now() / 1000) + 60
+  const factory = (s: Store) => s.saveStructure({ ...base, character: 'Testchar', name: 'Test Weapon Factory', kind: 'factory', lots: 1, maintPerHour: 20, powerPerHour: 50, state: 'running' })
+
+  it('sets a running factory to Idle when its "finished" mail arrives', () => {
+    const s = new Store(':memory:')
+    const id = factory(s)
+    const ts = later()
+    s.insertEvent('Testchar', { mailId: 'f1', timestamp: ts, kind: 'factory_done', structure: 'Test Weapon Factory' })
+    const f = s.listStructures().find((x) => x.id === id)!
+    expect(f.state).toBe('idle')
+    expect(f.stateSince).toBe(ts)
+    expect(s.structureMails()[0]).toMatchObject({ kind: 'factory_done', structureId: id })
+  })
+
+  it('records a 0 maintenance reading for an empty-pool mail', () => {
+    const s = new Store(':memory:')
+    const id = factory(s)
+    s.insertEvent('Testchar', { mailId: 'm1', timestamp: later(), kind: 'structure_maint', structure: 'Test Weapon Factory', planet: 'naboo' })
+    expect(s.listStructures().find((x) => x.id === id)!.latest.maint?.value).toBe(0)
+  })
+
+  it('changes nothing for mails older than the structure, or with no match', () => {
+    const s = new Store(':memory:')
+    const id = factory(s)
+    s.insertEvent('Testchar', { mailId: 'old', timestamp: 1000, kind: 'factory_done', structure: 'Test Weapon Factory' })
+    s.insertEvent('Testchar', { mailId: 'x', timestamp: later(), kind: 'factory_done', structure: 'Some Other Factory' })
+    expect(s.listStructures().find((x) => x.id === id)!.state).toBe('running')
+    expect(s.structureMails().map((m) => m.structureId)).toEqual([null]) // the 1000 one is older than 14 days
+  })
+
+  it('keeps construction mails with the lots left', () => {
+    const s = new Store(':memory:')
+    s.insertEvent('Testchar', { mailId: 'c1', timestamp: later(), kind: 'construction', structure: 'Elite Mineral Harvester', lotsLeft: 4 })
+    expect(s.structureMails()).toMatchObject([{ kind: 'construction', name: 'Elite Mineral Harvester', lotsLeft: 4, structureId: null }])
+  })
+})

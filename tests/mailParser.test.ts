@@ -103,3 +103,30 @@ describe('splitQuantity / itemKey', () => {
     expect(itemKey('\\#FFFFFFBUYING \\#B978F1Tauntaun')).toBe('buying tauntaun')
   })
 })
+
+describe('structure mails', () => {
+  it('reads a factory that stopped making items', () => {
+    const r = parseMail(mail('200', 'SWG.Omega.system', 'Manufacturing station finished', 1777000000,
+      'Your manufacturing station, Test Weapon Factory, has stopped making items.'))
+    expect(r).toMatchObject({ kind: 'factory_done', structure: 'Test Weapon Factory', timestamp: 1777000000 })
+  })
+
+  it('reads an empty structure maintenance pool, with negative coordinates', () => {
+    const r = parseMail(mail('201', 'SWG.Omega.system', 'Structure maintenance pool empty!', 1777000100,
+      'Your Elite Mineral Harvester (-1234, 567  tatooine) has an empty maintenance pool. It will start deducting from your bank account automatically.'))
+    expect(r).toMatchObject({ kind: 'structure_maint', structure: 'Elite Mineral Harvester', planet: 'tatooine' })
+  })
+
+  it('reads a finished construction and the lots left', () => {
+    const r = parseMail(mail('202', 'SWG.Omega.system', 'Construction Complete', 1777000200,
+      'Construction of your Elite Mineral Harvester is now complete. You have 4 lots remaining.'))
+    expect(r).toMatchObject({ kind: 'construction', structure: 'Elite Mineral Harvester', lotsLeft: 4 })
+    const one = parseMail(mail('203', 'SWG.Omega.system', 'Construction Complete', 1777000300,
+      'Construction of your Food Factory is now complete. You have 1 lot remaining.'))
+    expect(one).toMatchObject({ lotsLeft: 1 })
+  })
+
+  it('ignores a structure mail with an unknown shape', () => {
+    expect(parseMail(mail('204', 'SWG.Omega.system', 'Construction Complete', 1777000400, 'Something else entirely.'))).toBeNull()
+  })
+})

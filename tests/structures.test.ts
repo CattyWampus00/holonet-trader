@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attention, drains, forecast, formatHours, hoursWhere, lotsAfter, needsAttention, lotsByCharacter, MAX_LOTS, parseOperateResource, resourceItemName, resourceKeyOf, upkeepPerDay } from '../src/shared/structures'
+import { attention, drains, forecast, formatHours, hoursWhere, lotsAfter, matchStructure, needsAttention, lotsByCharacter, MAX_LOTS, parseOperateResource, resourceItemName, resourceKeyOf, upkeepPerDay } from '../src/shared/structures'
 
 describe('drains', () => {
   it('follows what the owner confirmed in game', () => {
@@ -129,5 +129,29 @@ describe('needsAttention', () => {
       ['Low power', 'power', 'urgent'],
       ['Low maint', 'maintenance', 'soon']
     ])
+  })
+})
+
+describe('matchStructure', () => {
+  const list = [
+    { id: 1, character: 'Testchar', name: 'Ore Elite', typeName: 'Elite Mineral Harvester', planet: 'Tatooine', kind: 'harvester' as const },
+    { id: 2, character: 'Testchar', name: 'Gas Elite', typeName: 'Elite Mineral Harvester', planet: 'Naboo', kind: 'harvester' as const },
+    { id: 3, character: 'Testchar', name: 'Test  Weapon Factory', typeName: null, planet: 'Naboo', kind: 'factory' as const },
+    { id: 4, character: 'Otherchar', name: 'Ore Elite', typeName: 'Elite Mineral Harvester', planet: 'Tatooine', kind: 'harvester' as const }
+  ]
+
+  it('matches the custom name, ignoring case and spaces, for the same character only', () => {
+    expect(matchStructure(list, { character: 'Testchar', name: 'test weapon factory', kind: 'factory' })).toBe(3)
+    expect(matchStructure(list, { character: 'Otherchar', name: 'Ore Elite' })).toBe(4)
+  })
+
+  it('falls back to the machine type, narrowed by planet', () => {
+    expect(matchStructure(list, { character: 'Testchar', name: 'Elite Mineral Harvester', planet: 'tatooine' })).toBe(1)
+  })
+
+  it('returns null when it cannot tell which one', () => {
+    expect(matchStructure(list, { character: 'Testchar', name: 'Elite Mineral Harvester' })).toBeNull() // two fit
+    expect(matchStructure(list, { character: 'Testchar', name: 'Ore Elite', kind: 'factory' })).toBeNull() // wrong kind
+    expect(matchStructure(list, { character: 'Nobody', name: 'Ore Elite' })).toBeNull()
   })
 })

@@ -8,6 +8,9 @@ export type EventKind =
   | 'offer_out' // "Your Offer to a Vendor": an offer you made
   | 'vendor_empty' // "An update about your vendor": vendor is now empty
   | 'vendor_maint' // "Vendor maintenance pool empty!"
+  | 'factory_done' // "Manufacturing station finished": a factory stopped making items
+  | 'structure_maint' // "Structure maintenance pool empty!": now paying from the bank
+  | 'construction' // "Construction Complete": a structure was placed; says how many lots are left
 
 export interface ParsedMail {
   mailId: string
@@ -26,6 +29,24 @@ export interface ParsedMail {
   counterparty?: string
   city?: string
   planet?: string
+  /** Structure mails: the structure's name as the mail shows it. */
+  structure?: string
+  /** "Construction Complete": lots the character has left, per the game. */
+  lotsLeft?: number
+}
+
+/** A structure mail, for the notices on the Structures tab and Dashboard. */
+export interface StructureMail {
+  id: number
+  character: string
+  ts: number
+  kind: 'factory_done' | 'structure_maint' | 'construction'
+  /** The name as the mail shows it. */
+  name: string
+  planet: string | null
+  lotsLeft: number | null
+  /** The app's structure it was matched to, or null when none matched. */
+  structureId: number | null
 }
 
 export interface CharacterInfo {

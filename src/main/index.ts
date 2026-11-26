@@ -113,6 +113,7 @@ function registerIpc() {
   )
   ipcMain.handle('customers:list', (_e, from: number, to: number, character?: string) => store.customerList(from, to, character || undefined))
   ipcMain.handle('vendorAlerts', () => store.vendorAlerts())
+  ipcMain.handle('structureMails', () => store.structureMails())
   ipcMain.handle('inventory:list', () => store.listItems())
   ipcMain.handle('inventory:save', (_e, item) => store.saveItem(item))
   ipcMain.handle('inventory:delete', (_e, id: number) => store.deleteItem(id))

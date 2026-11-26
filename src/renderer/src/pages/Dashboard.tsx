@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { cleanItemName } from '@shared/mailParser'
-import type { CharacterInfo, InventoryItem, Structure } from '@shared/types'
+import type { CharacterInfo, InventoryItem, Structure, StructureMail } from '@shared/types'
 import { needsRestock } from '@shared/stock'
 import { formatHours, needsAttention, POOL_LABEL, upkeepPerDay } from '@shared/structures'
 import { useNow } from './Structures'
@@ -23,7 +23,17 @@ export default function Dashboard({ version, items, settings, characters }: { ve
     api.summary(from, to, characters.some((c) => c.name === character) ? character : undefined).then(setS)
     api.vendorAlerts().then(setAlerts)
   }, [range, character, characters, version])
-  useEffect(() => { api.structures().then(setStructures) }, [version])
+  useEffect(() => {
+    api.structures().then(setStructures)
+    api.structureMails().then(setMails)
+  }, [version])
+  const [mails, setMails] = useState<StructureMail[]>([])
+  // Empty-pool mails from the last 7 days, unless a newer reading shows the pool was topped up since.
+  const bankPaying = mails.filter((m) => {
+    if (m.kind !== 'structure_maint' || Date.now() / 1000 - m.ts > 7 * 86400) return false
+    const s = structures.find((x) => x.id === m.structureId)
+    return !s?.latest.maint || s.latest.maint.ts <= m.ts || s.latest.maint.value === 0
+  })
 
   const low = items.filter((i) => needsRestock(i, settings.lowThreshold))
   const t = s?.totals
@@ -40,6 +50,11 @@ export default function Dashboard({ version, items, settings, characters }: { ve
       {low.length > 0 && (
         <div className="banner bad">
           <b>Restock needed:</b> {low.map((i) => `${i.name} (${i.onHand})`).join(', ')}
+        </div>
+      )}
+      {bankPaying.length > 0 && (
+        <div className="banner bad">
+          <b>Maintenance pool empty:</b> {[...new Set(bankPaying.map((m) => `${m.name} (${m.character})`))].join(', ')}. The game is taking upkeep from your bank.
         </div>
       )}
       {alerts.length > 0 && Date.now() / 1000 - alerts[0]!.ts < 7 * 86400 && (
