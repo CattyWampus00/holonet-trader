@@ -38,17 +38,39 @@ Banner and badge skip archived items; archived items keep their sales matched; r
 
 ## Step 2: machine types and structures
 
+### Rule: enter what the game shows, never model modifiers
+Maintenance, power and extraction all have modifiers (merchant, player expertise, city, buffs, weekend double extraction). The app does **not** try to calculate them: the game's own windows already show the actual values after every modifier, so the player copies those. When a modifier changes (new expertise, moving into a city, a buff ending, the weekend rate ending), the player updates the number from the same window.
+
+What the game shows (owner's screenshots, 2026-11-26, Elite Mineral Mining Installation, 3 lots):
+
+| Window | Field | Example | Use |
+|---|---|---|---|
+| Structure Status | Maintenance Rate | `84 cr/hr (126)` | **84** is the actual rate (126 is the deed's base). Enter 84 |
+| Structure Status | Power Consumption | `165 units/hr` | actual power use (already includes the -20% energy modifier) |
+| Structure Status | Maintenance Pool | `63367 (31 days, 10 h...)` | the surplus maintenance reading, plus the game's own countdown |
+| Structure Status | Power Reserves | `110847 (27 days, 23 ho...)` | the surplus power reading, plus the game's own countdown |
+| Operate panel | resource line | `Carbigyfed, a type of Crism Siliclastic Ore` | resource being harvested (name + type) |
+| Operate panel | percent bar | `44%` | concentration of that resource at this spot |
+| Operate panel | Spec Rate | `57 KG/H` | the harvester's rate with modifiers (deed base was 44; weekend double rate was on) |
+| Operate panel | Actual Rate | `0.00 KG/H` while off | **the real extraction rate while running.** Enter this one |
+| Operate panel | Capacity | `0%` | how full the hopper is |
+
+Checks that the countdown method is right: 63,367 / 84 = 754 h = 31 days 10 h, and 110,847 / 165 = 672 h = 27 days 23 h, both exactly what the game shows. The two maintenance modifiers multiply (126 x 0.80 x 0.84 = 84.7, shown as 84), more proof the app should not try to combine modifiers itself.
+
+Because the game shows its own countdowns, the app can show "the game said 31 d 10 h at your last reading" next to its own estimate; a difference means a typo.
+
 ### Machine types (the player's saved fixed stats)
 The app ships with **no machine values**: hopper sizes and rates differ between players. The player saves their own machine types once, under a name they choose (for example "My Elite Ore Harvester").
 
 Fixed stats (saved once):
 - name, kind (harvester or factory)
 - lots used (for example elite harvester 3, factory 1; lower-tier harvesters differ, the player enters them)
-- base maintenance rate per hour
-- power use per hour
-- base extraction rate (harvesters)
-- storage capacity (harvesters)
+- actual maintenance rate per hour (Structure Status, the first number)
+- actual power use per hour (Structure Status, Power Consumption)
+- storage capacity (harvesters, from the deed)
 - factory production efficiency (factories)
+
+Extraction rate is **not** a fixed stat: it depends on the resource's concentration and on modifiers that come and go (weekend double rate). It is a changing value, read from the Operate panel's Actual Rate while running.
 
 Any field may be left empty; a countdown that needs an empty field shows "not enough info" instead of a guess.
 
@@ -58,7 +80,7 @@ Any field may be left empty; a countdown that needs an empty field shows "not en
 - Keeps its fixed stats through pick up and re-place, like the deed does in game.
 - **Save as machine type** button turns a hand-entered structure into a template.
 
-Changing values (updated by the player when they change): surplus maintenance, surplus power, hopper amount when emptied, resource being harvested, state.
+Changing values (updated by the player when they change): surplus maintenance, surplus power, actual extraction rate, hopper capacity %, hopper amount when emptied, resource being harvested, state. One "reading" form takes them all at once, straight from the two windows, so a check-in costs a few numbers.
 
 ### States
 | State | Meaning | Maintenance drains | Power drains | Hopper fills |
@@ -75,16 +97,17 @@ Every state change is stored with its time. Nothing stores a "current" amount; a
 - Never stored as a number, always added up.
 
 ### Data (sketch)
-- `machine_types(id, name, kind, lots, maint_per_hour, power_per_hour, extraction_rate, storage, efficiency)` (all stats nullable)
-- `structures(id, character, type_id, name, planet, notes, lots, maint_per_hour, power_per_hour, extraction_rate, storage, efficiency)` (copied stats)
+- `machine_types(id, name, kind, lots, maint_per_hour, power_per_hour, storage, efficiency)` (all stats nullable)
+- `structures(id, character, type_id, name, planet, notes, lots, maint_per_hour, power_per_hour, storage, efficiency)` (copied stats)
 - `structure_states(structure_id, state, ts)`
-- `structure_snapshots(structure_id, ts, surplus_maint, surplus_power)` (each top up or reading)
+- `structure_readings(structure_id, ts, surplus_maint, surplus_power, extraction_rate, hopper_pct)` (each check-in; any field may be empty)
 
 ---
 
 ## Step 3: harvester resources and emptying the hopper
 
 - Each harvester has a **resource history**: periods of (resource, from, to). Switching resource closes the old period and opens a new one.
+- **Resource name**: the Operate panel writes it as `<Name>, a type of <Type>` (for example `Carbigyfed, a type of Crism Siliclastic Ore`). The app asks for name and type (or accepts that line pasted in) and stores it in the `Type (Name)` form the mail parser uses, here `Crism Siliclastic Ore (Carbigyfed)`. Converting between the two forms is a small pure function with tests. The concentration % is stored with the resource period.
 - **Empty hopper**: the player enters the amount collected. It is added as stock to the inventory item for that resource. If none exists, the item is created with the same `Type (Name)` form the mail parser gives resources, so future sales match without linking.
 - Ties to Step 1: when switching away from a resource because it despawned, offer "Mark it despawned and archive the item?". If an archived resource gets stock again, it is restored.
 - Data: `harvester_resources(structure_id, resource_name, from_ts, to_ts)`, `hopper_empties(structure_id, ts, resource_name, amount)` (the stock change also goes through `stock_moves` with reason `harvest`).
@@ -94,10 +117,10 @@ Every state change is stored with its time. Nothing stores a "current" amount; a
 ## Step 4: countdowns, Needs attention, upkeep
 
 From the last snapshot and the state history (only hours in a draining state count):
-- **Maintenance runs out in**: surplus maintenance ÷ maintenance per hour. Example from a deed: 63,367 ÷ 126 ≈ 503 h ≈ 21 days.
-- **Power runs out in**: surplus power ÷ power per hour.
-- **Hopper full in**: storage ÷ (extraction rate × concentration %). Shown as "about" until checked against real collections (see questions).
-- **Upkeep**: maintenance per hour × 24 per structure, totalled per day and per month (126/h ≈ 3,024 credits a day).
+- **Maintenance runs out in**: surplus maintenance ÷ actual maintenance per hour. Example: 63,367 ÷ 84 = 754 h = 31 days 10 h (matches the game).
+- **Power runs out in**: surplus power ÷ actual power per hour. Example: 110,847 ÷ 165 = 672 h = 27 days 23 h (matches the game).
+- **Hopper full in**: storage × (100 − capacity %) ÷ 100 ÷ actual extraction rate. Shown as "about", because the rate can change (weekend double rate ends, buffs); a new reading corrects it.
+- **Upkeep**: actual maintenance per hour × 24 per structure, totalled per day and per month (84/h = 2,016 credits a day).
 
 UI: a **Structures** tab (types, structures, lots per character, hopper log) and a **Needs attention** list on the Dashboard, soonest first.
 
@@ -122,9 +145,10 @@ Parser work follows the existing rule: pure parser functions with tests on hand-
 1. Does a turned-off harvester still use power? (guess: no)
 2. Does a turned-off structure still use maintenance? (guess: yes)
 3. When picked up, does the deed keep its leftover surplus maintenance and power? (deed screenshots suggest yes)
-4. How much power does a harvester use per hour, and where is it shown?
-5. Real extraction per hour: note the hopper amount, check again a few hours later, compare with base extraction rate × concentration %. Do expertise or modifiers change it?
+4. **ANSWERED 2026-11-26:** power use per hour is shown in Structure Status as Power Consumption (165 units/hr on the owner's elite mineral harvester), already after modifiers.
+5. **MOSTLY ANSWERED 2026-11-26:** modifiers do change extraction (deed base 44, Spec Rate 57 with the weekend double rate on), and the Operate panel shows Actual Rate while running, so the app uses that instead of a formula. Still to see: Actual Rate on a running harvester, to confirm it is roughly Spec Rate × concentration %.
 6. Does a factory use power only while it is making items?
-7. Lots used by each lower-tier harvester type.
+7. Lots used by each lower-tier harvester type (elite mineral harvester: 3).
+8. Where does a factory show its actual maintenance and power (Structure Status too)?
 
 Whatever the answers, these rules live in data or settings with defaults, so a correction does not need a new version.
