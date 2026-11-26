@@ -165,6 +165,43 @@ describe('Store structures', () => {
     expect(s.listStructures()[0]).toMatchObject({ state: 'packed', stateSince: 2_000_000_200 })
   })
 
+  it('keeps a resource history per harvester', () => {
+    const s = new Store(':memory:')
+    const id = s.saveStructure(fromType(s.saveMachineType(elite)))
+    s.setHarvesterResource(id, { name: 'Fakeorite', type: 'Crism Siliclastic Ore', concentration: 44 }, 2_000_000_000)
+    s.setHarvesterResource(id, { name: 'fakeorite', type: 'Crism Siliclastic Ore', concentration: 45 }, 2_000_000_050) // same one: update only
+    s.setHarvesterResource(id, { name: 'Testium', type: 'Iron', concentration: 70 }, 2_000_000_100)
+    expect(s.resourceHistory(id).map((r) => [r.name, r.concentration, r.toTs])).toEqual([['Testium', 70, null], ['Fakeorite', 45, 2_000_000_100]])
+    expect(s.listStructures()[0]!.resource).toMatchObject({ name: 'Testium', type: 'Iron' })
+  })
+
+  it('empties a hopper into inventory, matching resources by their own name', () => {
+    const s = new Store(':memory:')
+    const id = s.saveStructure(fromType(s.saveMachineType(elite)))
+    expect(() => s.emptyHopper(id, 100)).toThrow(/resource/) // no resource set yet
+
+    // 1. No item and no sales yet: a new item named Type (Name).
+    s.setHarvesterResource(id, { name: 'Fakeorite', type: 'Crism Siliclastic Ore', concentration: 44 })
+    const first = s.emptyHopper(id, 1000)
+    expect(first).toMatchObject({ itemName: 'Crism Siliclastic Ore (Fakeorite)', created: true })
+    expect(s.emptyHopper(id, 500)).toMatchObject({ itemId: first.itemId, created: false })
+    expect(s.getItem(first.itemId)!.onHand).toBe(1500)
+
+    // 2. Sold before under the vendor's broader name: the new item takes that name, so those sales match it.
+    s.insertEvent('A', sale('1', 10, 'Ore (Testium)', 5000, 5000))
+    s.setHarvesterResource(id, { name: 'Testium', type: 'Crism Siliclastic Ore', concentration: 60 })
+    const second = s.emptyHopper(id, 2000)
+    expect(second).toMatchObject({ itemName: 'Ore (Testium)', created: true })
+    expect(s.unmatched()).toEqual([])
+
+    // 3. An archived item for that resource comes back when harvested again.
+    s.setArchived(first.itemId, true)
+    s.setHarvesterResource(id, { name: 'Fakeorite', type: 'Crism Siliclastic Ore', concentration: 44 })
+    expect(s.emptyHopper(id, 10)).toMatchObject({ itemId: first.itemId, created: false })
+    expect(s.getItem(first.itemId)).toMatchObject({ onHand: 1510, archived: false })
+    expect(s.hopperLog(id).map((h) => [h.resource, h.amount])).toEqual([['Fakeorite', 10], ['Testium', 2000], ['Fakeorite', 500], ['Fakeorite', 1000]])
+  })
+
   it('stores readings and returns the latest one', () => {
     const s = new Store(':memory:')
     const id = s.saveStructure(fromType(s.saveMachineType(elite)))

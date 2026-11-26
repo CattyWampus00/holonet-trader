@@ -153,6 +153,18 @@ export interface StructureReading {
   hopperPct: number | null
 }
 
+/** One period of a harvester extracting one resource. `toTs` is null while it is the current resource. */
+export interface HarvesterResource {
+  id: number
+  /** The resource's own name, e.g. "Carbigyfed" (unique in game). */
+  name: string
+  /** The type as the Operate panel shows it, e.g. "Crism Siliclastic Ore". */
+  type: string
+  concentration: number | null
+  fromTs: number
+  toTs: number | null
+}
+
 /** One real placed (or packed-up) harvester or factory. It keeps its own copy of the type's stats. */
 export interface Structure {
   id: number
@@ -171,8 +183,10 @@ export interface Structure {
   state: import('./structures').StructureState
   stateSince: number
   lastReading: StructureReading | null
+  /** Harvesters: the resource being extracted now. */
+  resource: HarvesterResource | null
 }
-export type StructureInput = Omit<Structure, 'id' | 'typeName' | 'state' | 'stateSince' | 'lastReading'> & {
+export type StructureInput = Omit<Structure, 'id' | 'typeName' | 'state' | 'stateSince' | 'lastReading' | 'resource'> & {
   id?: number
   /** Only used when creating: the state it starts in. */
   state?: import('./structures').StructureState

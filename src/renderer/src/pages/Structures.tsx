@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { MachineType, MachineTypeInput, Structure, StructureInput, StructureReading } from '@shared/types'
-import { KIND_LABEL, lotsAfter, lotsByCharacter, MAX_LOTS, STATE_LABEL, type StructureKind, type StructureState } from '@shared/structures'
+import type { HarvesterResource, MachineType, MachineTypeInput, Structure, StructureInput, StructureReading } from '@shared/types'
+import { KIND_LABEL, lotsAfter, lotsByCharacter, MAX_LOTS, parseOperateResource, STATE_LABEL, type StructureKind, type StructureState } from '@shared/structures'
 import { api, credits } from '../api'
 
 interface Props { version: number; characters: string[]; onChange: () => void }
@@ -28,6 +28,9 @@ export default function Structures({ version, characters, onChange }: Props) {
   const [editingType, setEditingType] = useState<MachineTypeInput | null>(null)
   const [editing, setEditing] = useState<StructureInput | null>(null)
   const [reading, setReading] = useState<Structure | null>(null)
+  const [choosing, setChoosing] = useState<Structure | null>(null)
+  const [emptying, setEmptying] = useState<Structure | null>(null)
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     api.machineTypes().then(setTypes)
@@ -57,6 +60,13 @@ export default function Structures({ version, characters, onChange }: Props) {
         <span className="muted">Copy the numbers from the game's Structure Status window (and the Operate panel for harvesters). They already include your modifiers.</span>
       </div>
 
+      {notice && (
+        <div className="banner row" style={{ justifyContent: 'space-between' }}>
+          <span>{notice}</span>
+          <button className="btn ghost" onClick={() => setNotice('')}>OK</button>
+        </div>
+      )}
+
       {people.length > 0 && (
         <div className="stats" style={{ marginBottom: 16 }}>
           {people.map((c) => {
@@ -85,6 +95,13 @@ export default function Structures({ version, characters, onChange }: Props) {
                     <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
                       {s.typeName ?? KIND_LABEL[s.kind]} · {s.lots} lot{s.lots === 1 ? '' : 's'}
                     </div>
+                    {s.kind === 'harvester' && (
+                      <div style={{ fontSize: 12, marginTop: 2 }}>
+                        {s.resource
+                          ? <>Extracting {s.resource.name} <span className="muted">({s.resource.type}{s.resource.concentration != null ? `, ${s.resource.concentration}%` : ''})</span></>
+                          : <span className="muted">No resource set</span>}
+                      </div>
+                    )}
                   </td>
                   <td>{s.character}</td>
                   <td>{s.planet}</td>
@@ -108,6 +125,10 @@ export default function Structures({ version, characters, onChange }: Props) {
                     ) : <span className="muted">none yet</span>}
                   </td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {s.kind === 'harvester' && <>
+                      <button className="btn ghost" onClick={() => setChoosing(s)}>Resource</button>{' '}
+                      <button className="btn ghost" disabled={!s.resource} title={s.resource ? '' : 'Set the resource first'} onClick={() => setEmptying(s)}>Empty hopper</button>{' '}
+                    </>}
                     <button className="btn ghost" onClick={() => setReading(s)}>Reading</button>{' '}
                     <button className="btn ghost" onClick={() => setEditing({ ...s })}>Edit</button>
                   </td>
@@ -169,6 +190,30 @@ export default function Structures({ version, characters, onChange }: Props) {
           }}
           onSaveType={async (t) => { await api.saveMachineType(t); onChange() }}
           onDelete={editing.id ? async () => { await api.deleteStructure(editing.id!); setEditing(null); onChange() } : undefined}
+        />
+      )}
+      {choosing && (
+        <ResourceModal
+          structure={choosing}
+          onClose={() => setChoosing(null)}
+          onSave={async (res, archiveItemId) => {
+            await api.setHarvesterResource(choosing.id, res)
+            if (archiveItemId != null) await api.setArchived(archiveItemId, true)
+            setChoosing(null)
+            onChange()
+          }}
+        />
+      )}
+      {emptying && emptying.resource && (
+        <EmptyModal
+          structure={emptying}
+          onClose={() => setEmptying(null)}
+          onSave={async (amount) => {
+            const r = await api.emptyHopper(emptying.id, amount)
+            setEmptying(null)
+            setNotice(`Added ${credits(amount)} units to ${r.itemName}${r.created ? ' (new inventory item)' : ''}.`)
+            onChange()
+          }}
         />
       )}
       {reading && (
@@ -282,6 +327,119 @@ function StructureModal({ structure, types, characters, onClose, onSave, onSaveT
             }}>{savedType ? 'Saved as type' : 'Save as machine type'}</button>
           </span>
           <span><button className="btn ghost" onClick={onClose}>Cancel</button>{' '}<button className="btn" disabled={!s.name.trim() || !s.character.trim()} onClick={() => onSave(s)}>Save</button></span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Short date for history lists. */
+const day = (ts: number) => new Date(ts * 1000).toLocaleDateString()
+
+/** Set or switch the resource a harvester extracts. Switching can archive the old resource's item (it despawned). */
+function ResourceModal({ structure, onClose, onSave }: {
+  structure: Structure; onClose: () => void
+  onSave: (res: { name: string; type: string; concentration: number | null }, archiveItemId: number | null) => void
+}) {
+  const cur = structure.resource
+  const [name, setName] = useState(cur?.name ?? '')
+  const [type, setType] = useState(cur?.type ?? '')
+  const [conc, setConc] = useState<number | null>(cur?.concentration ?? null)
+  const [target, setTarget] = useState<{ itemId: number | null; itemName: string } | null>(null)
+  const [oldItem, setOldItem] = useState<{ itemId: number | null; itemName: string } | null>(null)
+  const [archiveOld, setArchiveOld] = useState(false)
+  const [history, setHistory] = useState<HarvesterResource[]>([])
+  const switching = !!cur && name.trim() !== '' && name.trim().toLowerCase() !== cur.name.toLowerCase()
+
+  useEffect(() => { api.resourceHistory(structure.id).then(setHistory) }, [structure.id])
+  useEffect(() => { if (cur) api.resourceTarget(cur).then(setOldItem) }, [cur])
+  useEffect(() => {
+    if (!name.trim() || !type.trim()) return setTarget(null)
+    api.resourceTarget({ name, type }).then(setTarget)
+  }, [name, type])
+
+  // The old resource's concentration does not carry over to a different resource.
+  const changeName = (next: string) => {
+    setName(next)
+    if (cur && next.trim().toLowerCase() !== cur.name.toLowerCase() && conc === cur.concentration) setConc(null)
+  }
+  // Pasting the Operate panel's line ("Name, a type of Type") fills both boxes.
+  const paste = (line: string) => {
+    const p = parseOperateResource(line)
+    if (p) { changeName(p.name); setType(p.type) }
+  }
+
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2>Resource: {structure.name}</h2>
+        <label>Paste the Operate panel line (optional)</label>
+        <input placeholder="Name, a type of Type" onChange={(e) => paste(e.target.value)} />
+        <label>Resource name</label>
+        <input value={name} onChange={(e) => changeName(e.target.value)} autoFocus />
+        <label>Resource type</label>
+        <input value={type} onChange={(e) => setType(e.target.value)} />
+        <NumField label="Concentration % (Operate panel bar)" value={conc} onChange={(v) => setConc(v == null ? null : Math.min(100, v))} />
+        {target && (
+          <p className="muted" style={{ margin: '10px 0 0' }}>
+            Hopper empties go to <b>{target.itemName}</b>{target.itemId == null ? ' (a new inventory item)' : ' (already in inventory)'}.
+          </p>
+        )}
+        {switching && oldItem?.itemId != null && (
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', textTransform: 'none' }}>
+            <input type="checkbox" style={{ width: 'auto' }} checked={archiveOld} onChange={(e) => setArchiveOld(e.target.checked)} />
+            {cur!.name} despawned: archive "{oldItem.itemName}"
+          </label>
+        )}
+        {history.length > 0 && (
+          <>
+            <label>History</label>
+            {history.slice(0, 8).map((h) => (
+              <div key={h.id} className="muted" style={{ fontSize: 12 }}>
+                {h.name} ({h.type}) · {day(h.fromTs)} to {h.toTs ? day(h.toTs) : 'now'}
+              </div>
+            ))}
+          </>
+        )}
+        <div className="row" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn" disabled={!name.trim() || !type.trim()}
+            onClick={() => onSave({ name: name.trim(), type: type.trim(), concentration: conc }, switching && archiveOld ? oldItem?.itemId ?? null : null)}>
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Put what was collected from the hopper into inventory. */
+function EmptyModal({ structure, onClose, onSave }: { structure: Structure; onClose: () => void; onSave: (amount: number) => void }) {
+  const res = structure.resource!
+  const [amount, setAmount] = useState<number | null>(null)
+  const [target, setTarget] = useState<{ itemId: number | null; itemName: string } | null>(null)
+  const [log, setLog] = useState<{ ts: number; resource: string; amount: number }[]>([])
+  useEffect(() => { api.resourceTarget(res).then(setTarget) }, [res])
+  useEffect(() => { api.hopperLog(structure.id).then(setLog) }, [structure.id])
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Empty hopper: {structure.name}</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          {res.name} ({res.type}) goes into <b>{target?.itemName ?? '…'}</b>{target && target.itemId == null ? ', a new inventory item' : ''}.
+        </p>
+        <NumField label="Units collected" value={amount} step="1" onChange={(v) => setAmount(v == null ? null : Math.floor(v))} />
+        {log.length > 0 && (
+          <>
+            <label>Recent empties</label>
+            {log.slice(0, 5).map((h, i) => (
+              <div key={i} className="muted" style={{ fontSize: 12 }}>{day(h.ts)} · {credits(h.amount)} {h.resource}</div>
+            ))}
+          </>
+        )}
+        <div className="row" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn" disabled={!amount || amount <= 0} onClick={() => onSave(amount!)}>Add to inventory</button>
         </div>
       </div>
     </div>

@@ -3,8 +3,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { summarizeCustomers, type SaleLine } from '../shared/customers'
 import { cleanItemName, itemKey } from '../shared/mailParser'
 import { classifyTrend, summarize, unitPrice } from '../shared/priceStats'
-import type { CustomerRow, InventoryItem, MachineType, MachineTypeInput, ParsedMail, PricePointRow, PriceRow, PriceSeries, SaleRow, Structure, StructureInput, StructureReading } from '../shared/types'
-import type { StructureKind, StructureState } from '../shared/structures'
+import type { CustomerRow, HarvesterResource, InventoryItem, MachineType, MachineTypeInput, ParsedMail, PricePointRow, PriceRow, PriceSeries, SaleRow, Structure, StructureInput, StructureReading } from '../shared/types'
+import { resourceItemName, resourceKeyOf, type StructureKind, type StructureState } from '../shared/structures'
 
 /**
  * Bump this whenever the mail parser starts understanding mails it used to skip.
@@ -57,6 +57,13 @@ export class Store {
       CREATE TABLE IF NOT EXISTS structure_readings(
         id INTEGER PRIMARY KEY, structure_id INTEGER NOT NULL REFERENCES structures(id) ON DELETE CASCADE,
         ts INTEGER NOT NULL, surplus_maint REAL, surplus_power REAL, extraction_rate REAL, hopper_pct REAL);
+      CREATE TABLE IF NOT EXISTS harvester_resources(
+        id INTEGER PRIMARY KEY, structure_id INTEGER NOT NULL REFERENCES structures(id) ON DELETE CASCADE,
+        name TEXT NOT NULL, type TEXT NOT NULL, concentration REAL, from_ts INTEGER NOT NULL, to_ts INTEGER);
+      CREATE TABLE IF NOT EXISTS hopper_empties(
+        id INTEGER PRIMARY KEY, structure_id INTEGER NOT NULL REFERENCES structures(id) ON DELETE CASCADE,
+        ts INTEGER NOT NULL, resource TEXT NOT NULL, amount INTEGER NOT NULL,
+        item_id INTEGER REFERENCES items(id) ON DELETE SET NULL);
     `)
     this.migratePowerupUses(path)
     this.addArchivedColumn()
@@ -279,7 +286,8 @@ export class Store {
         state: ((r.state as StructureState | null) ?? 'packed'), stateSince: (r.state_since as number | null) ?? (r.created_ts as number),
         lastReading: rd
           ? { ts: rd.ts as number, surplusMaint: num(rd.surplus_maint), surplusPower: num(rd.surplus_power), extractionRate: num(rd.extraction_rate), hopperPct: num(rd.hopper_pct) }
-          : null
+          : null,
+        resource: r.kind === 'harvester' ? this.currentResource(r.id as number) : null
       }
     })
   }
@@ -322,6 +330,78 @@ export class Store {
     if ([r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct].every((v) => v == null)) return
     this.db.prepare('INSERT INTO structure_readings(structure_id,ts,surplus_maint,surplus_power,extraction_rate,hopper_pct) VALUES(?,?,?,?,?,?)')
       .run(id, ts, r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct)
+  }
+
+  // ---- harvester resources and hoppers -------------------------------------
+  /** The resource a harvester is extracting now, or null. */
+  currentResource(structureId: number): HarvesterResource | null {
+    const r = this.db.prepare('SELECT * FROM harvester_resources WHERE structure_id=? AND to_ts IS NULL ORDER BY from_ts DESC, id DESC LIMIT 1')
+      .get(structureId) as Record<string, unknown> | undefined
+    return r ? toResource(r) : null
+  }
+
+  /** Every resource period of a harvester, newest first. */
+  resourceHistory(structureId: number): HarvesterResource[] {
+    return (this.db.prepare('SELECT * FROM harvester_resources WHERE structure_id=? ORDER BY from_ts DESC, id DESC').all(structureId) as Record<string, unknown>[])
+      .map(toResource)
+  }
+
+  /**
+   * Switch a harvester to a resource: the open period is closed and a new one starts. Setting the resource it is
+   * already on (same name) only updates the type and concentration.
+   */
+  setHarvesterResource(structureId: number, res: { name: string; type: string; concentration: number | null }, ts = Math.floor(Date.now() / 1000)): void {
+    const name = res.name.trim()
+    const cur = this.currentResource(structureId)
+    this.transaction(() => {
+      if (cur && cur.name.toLowerCase() === name.toLowerCase()) {
+        this.db.prepare('UPDATE harvester_resources SET type=?, concentration=? WHERE id=?').run(res.type.trim(), res.concentration, cur.id)
+        return
+      }
+      if (cur) this.db.prepare('UPDATE harvester_resources SET to_ts=? WHERE id=?').run(ts, cur.id)
+      this.db.prepare('INSERT INTO harvester_resources(structure_id,name,type,concentration,from_ts) VALUES(?,?,?,?,?)')
+        .run(structureId, name, res.type.trim(), res.concentration, ts)
+    })
+  }
+
+  /**
+   * Where a harvested resource goes in inventory. Matching uses the resource's own name (unique in game), because
+   * the type part differs between the Operate panel and vendor sale mails:
+   * 1. an inventory item whose name ends in `(Name)`;
+   * 2. otherwise a new item named like the resource's past sale mails, so those sales match it;
+   * 3. otherwise a new item named `Type (Name)`.
+   */
+  resourceTarget(res: { name: string; type: string }): { itemId: number | null; itemName: string } {
+    const key = res.name.trim().toLowerCase()
+    const item = this.listItems().find((i) => resourceKeyOf(i.name) === key)
+    if (item) return { itemId: item.id, itemName: item.name }
+    const sold = this.db.prepare("SELECT item_name FROM events WHERE kind='sale' AND item_key LIKE ? ORDER BY ts DESC LIMIT 1")
+      .get(`% (${key})`) as { item_name: string } | undefined
+    return { itemId: null, itemName: sold ? cleanItemName(sold.item_name) : resourceItemName(res.type, res.name) }
+  }
+
+  /**
+   * Empty a harvester's hopper: `amount` units of its current resource go into inventory as a "harvest" stock
+   * move (creating the item if needed; an archived item comes back, like any restock). Returns the item used.
+   */
+  emptyHopper(structureId: number, amount: number, ts = Math.floor(Date.now() / 1000)): { itemId: number; itemName: string; created: boolean } {
+    const res = this.currentResource(structureId)
+    if (!res) throw new Error('Set the resource this harvester is extracting first.')
+    const units = Math.floor(amount)
+    if (!(units > 0)) throw new Error('Enter how many units you collected.')
+    return this.transaction(() => {
+      const target = this.resourceTarget(res)
+      const created = target.itemId == null
+      const itemId = target.itemId ?? this.saveItem({ name: target.itemName, onHand: 0, costEach: 0, lowThreshold: null, notes: 'Harvested' })
+      this.adjustStock(itemId, units, 'harvest')
+      this.db.prepare('INSERT INTO hopper_empties(structure_id,ts,resource,amount,item_id) VALUES(?,?,?,?,?)').run(structureId, ts, res.name, units, itemId)
+      return { itemId, itemName: target.itemName, created }
+    })
+  }
+
+  /** Hopper empties of one harvester, newest first. */
+  hopperLog(structureId: number): { ts: number; resource: string; amount: number }[] {
+    return this.db.prepare('SELECT ts, resource, amount FROM hopper_empties WHERE structure_id=? ORDER BY ts DESC, id DESC').all(structureId) as never
   }
 
   /** Hide a sale name from "Sales not matched" (a name the player will never stock). */
@@ -504,6 +584,13 @@ function toItem(r: Record<string, unknown>): InventoryItem {
     id: r.id as number, name: r.name as string, key: r.key as string, onHand: r.on_hand as number,
     costEach: r.cost_each as number, lowThreshold: (r.low_threshold as number | null) ?? null, notes: r.notes as string,
     archived: r.archived_at != null
+  }
+}
+
+function toResource(r: Record<string, unknown>): HarvesterResource {
+  return {
+    id: r.id as number, name: r.name as string, type: r.type as string, concentration: num(r.concentration),
+    fromTs: r.from_ts as number, toTs: num(r.to_ts)
   }
 }
 

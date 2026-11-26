@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { drains, lotsAfter, lotsByCharacter, MAX_LOTS } from '../src/shared/structures'
+import { drains, lotsAfter, lotsByCharacter, MAX_LOTS, parseOperateResource, resourceItemName, resourceKeyOf } from '../src/shared/structures'
 
 describe('drains', () => {
   it('follows what the owner confirmed in game', () => {
@@ -29,5 +29,25 @@ describe('lots', () => {
     expect(lotsAfter(list, { character: 'Testa', lots: 1, state: 'running' }, 3)).toBe(7) // placing the packed factory
     expect(lotsAfter(list, { character: 'Testa', lots: 3, state: 'packed' }, 1)).toBe(3) // packing one up frees 3
     expect(lotsAfter(list, { character: 'Testb', lots: 3, state: 'running' }, 1)).toBe(4) // moved to another character
+  })
+})
+
+describe('resource names', () => {
+  it('reads the Operate panel line', () => {
+    expect(parseOperateResource('Fakeorite, a type of Crism Siliclastic Ore')).toEqual({ name: 'Fakeorite', type: 'Crism Siliclastic Ore' })
+    expect(parseOperateResource('  Fakeorite ,  A TYPE OF  Ore ')).toEqual({ name: 'Fakeorite', type: 'Ore' })
+    expect(parseOperateResource('Steel (Fakeium)')).toBeNull()
+  })
+
+  it('matches on the resource name, whatever the type part says', () => {
+    expect(resourceKeyOf('Crism Siliclastic Ore (Fakeorite)')).toBe('fakeorite')
+    expect(resourceKeyOf('Ore (Fakeorite)')).toBe('fakeorite') // vendor mail form
+    expect(resourceKeyOf('\\#FFCC00Steel (Fakeium)\\#.')).toBe('fakeium') // the game's color codes
+    expect(resourceKeyOf('Armor Powerup - Pistol Damage (7)')).toBeNull() // digits: not a resource
+    expect(resourceKeyOf('Rifle Scope')).toBeNull()
+  })
+
+  it('builds the inventory name', () => {
+    expect(resourceItemName(' Crism Siliclastic Ore ', 'Fakeorite')).toBe('Crism Siliclastic Ore (Fakeorite)')
   })
 })

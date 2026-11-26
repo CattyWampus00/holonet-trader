@@ -1,5 +1,5 @@
 import type { ThemeId } from '@shared/themes'
-import type { CustomerRow, DetectedLocation, InventoryItem, MachineType, MachineTypeInput, PriceRow, PriceSeries, SaleRow, ScanResult, Structure, StructureInput, StructureReading } from '@shared/types'
+import type { CustomerRow, DetectedLocation, HarvesterResource, InventoryItem, MachineType, MachineTypeInput, PriceRow, PriceSeries, SaleRow, ScanResult, Structure, StructureInput, StructureReading } from '@shared/types'
 import type { StructureState } from '@shared/structures'
 
 export interface Settings { serverDir: string | null; lowThreshold: number; location: DetectedLocation | null; theme: ThemeId; autoUpdate: boolean; version: string }
@@ -53,6 +53,12 @@ export interface Api {
   deleteStructure(id: number): Promise<void>
   setStructureState(id: number, state: StructureState): Promise<void>
   addReading(id: number, r: Omit<StructureReading, 'ts'>): Promise<void>
+  setHarvesterResource(id: number, res: { name: string; type: string; concentration: number | null }): Promise<void>
+  resourceHistory(id: number): Promise<HarvesterResource[]>
+  /** Which inventory item a resource's harvest would go to (itemId null = a new item with this name). */
+  resourceTarget(res: { name: string; type: string }): Promise<{ itemId: number | null; itemName: string }>
+  emptyHopper(id: number, amount: number): Promise<{ itemId: number; itemName: string; created: boolean }>
+  hopperLog(id: number): Promise<{ ts: number; resource: string; amount: number }[]>
   linkAlias(key: string, itemId: number): Promise<void>
   /** One item's links, or every link when no id is given. */
   linkedNames(itemId?: number): Promise<LinkedName[]>

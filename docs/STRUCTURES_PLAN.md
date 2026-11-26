@@ -1,6 +1,6 @@
 # Plan: retired resources, structures (harvesters and factories)
 
-Status: **Steps 1 and 2 BUILT (2026-11-26); steps 3 to 5 are plan only** (agreed with the owner 2026-11-26). Build in the order of the steps below; each step is its own release so it can be tried in game before the next one builds on it.
+Status: **Steps 1, 2 and 3 BUILT (2026-11-26); steps 4 and 5 are plan only** (agreed with the owner 2026-11-26). Build in the order of the steps below; each step is its own release so it can be tried in game before the next one builds on it.
 
 Ground rules that still apply: the app only reads files the player creates (never the game's folders), no native modules, the 8 themes stay locked (new UI uses theme variables only), fake names in tests.
 
@@ -115,7 +115,11 @@ Every state change is stored with its time. Nothing stores a "current" amount; a
 
 ---
 
-## Step 3: harvester resources and emptying the hopper
+## Step 3: harvester resources and emptying the hopper (DONE 2026-11-26)
+
+Built on the Structures tab: harvester rows show "Extracting <Name> (<Type>, <conc>%)" and get **Resource** and **Empty hopper** buttons. The Resource window takes the Operate panel line pasted in (or name and type typed), concentration, shows where hopper empties will go, offers "<old> despawned: archive <item>" when switching, and lists the history. Empty hopper adds the units to inventory (stock move reason `harvest`) and shows what it did. Store: `setHarvesterResource`, `currentResource`, `resourceHistory`, `resourceTarget`, `emptyHopper`, `hopperLog`; pure helpers `parseOperateResource`, `resourceKeyOf`, `resourceItemName` in `src/shared/structures.ts`.
+
+**Finding that changed the design (2026-11-26):** vendor sale mails name resources by a broader class (`Steel (Sages)`, `Copper (Dohen)`), not the Operate panel's specific type (`Crism Siliclastic Ore`). So harvests match inventory by the resource's own name in brackets (unique in game), not by the whole `Type (Name)` text: an item ending in `(Name)` is used; otherwise a new item takes the name the resource was sold under before (so those sales match it); otherwise `Type (Name)`.
 
 - Each harvester has a **resource history**: periods of (resource, from, to). Switching resource closes the old period and opens a new one.
 - **Resource name**: the Operate panel writes it as `<Name>, a type of <Type>` (for example `Carbigyfed, a type of Crism Siliclastic Ore`). The app asks for name and type (or accepts that line pasted in) and stores it in the `Type (Name)` form the mail parser uses, here `Crism Siliclastic Ore (Carbigyfed)`. Converting between the two forms is a small pure function with tests. The concentration % is stored with the resource period.

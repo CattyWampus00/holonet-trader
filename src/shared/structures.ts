@@ -1,3 +1,5 @@
+import { cleanItemName } from './mailParser'
+
 /**
  * Rules for harvesters and factories (see docs/STRUCTURES_PLAN.md). Pure functions, no database.
  * Numbers always come from the game's own windows (after modifiers); nothing here models modifiers.
@@ -50,4 +52,28 @@ export function lotsAfter(
 ): number {
   const others = structures.filter((s) => s.id !== changingId && s.character === next.character && usesLots(s.state))
   return others.reduce((n, s) => n + s.lots, 0) + (usesLots(next.state) ? next.lots : 0)
+}
+
+/**
+ * Read the resource line of a harvester's Operate panel: `<Name>, a type of <Type>`
+ * (for example `Carbigyfed, a type of Crism Siliclastic Ore`). Returns null when the line has another shape.
+ */
+export function parseOperateResource(line: string): { name: string; type: string } | null {
+  const m = /^\s*([^,]+?)\s*,\s*a type of\s+(.+?)\s*$/i.exec(line)
+  return m ? { name: m[1]!, type: m[2]! } : null
+}
+
+/**
+ * The resource's own name inside an item or sale name of the form `Type (Name)`, lower-case, or null.
+ * Resource names are unique in game, while the type part differs between the Operate panel
+ * ("Crism Siliclastic Ore") and vendor sale mails (a broader class such as "Ore"), so matching uses this.
+ */
+export function resourceKeyOf(itemName: string): string | null {
+  const m = /\(([A-Za-z]+)\)$/.exec(cleanItemName(itemName))
+  return m ? m[1]!.toLowerCase() : null
+}
+
+/** Inventory name for a harvested resource when no item or sale name exists yet: `Type (Name)`. */
+export function resourceItemName(type: string, name: string): string {
+  return `${type.trim()} (${name.trim()})`
 }
