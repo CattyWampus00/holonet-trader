@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { HarvesterResource, MachineType, MachineTypeInput, Structure, StructureInput, StructureMail, StructureReading } from '@shared/types'
 import {
-  attention, type Countdown, forecast, formatHours, KIND_LABEL, lotsAfter, lotsByCharacter, MAX_LOTS, parseOperateResource, STATE_LABEL,
+  attention, type Countdown, forecast, formatHours, KIND_LABEL, lotsAfter, lotsByCharacter, lotsComparable, MAX_LOTS, parseOperateResource, STATE_LABEL,
   type StructureKind, type StructureState, upkeepPerDay
 } from '@shared/structures'
 import { api, credits } from '../api'
@@ -34,6 +34,17 @@ export default function Structures({ version, characters, onChange }: Props) {
   const [choosing, setChoosing] = useState<Structure | null>(null)
   const [emptying, setEmptying] = useState<Structure | null>(null)
   const [notice, setNotice] = useState('')
+  const [transferring, setTransferring] = useState<Structure | null>(null)
+  /** Shown in the structure form when it was opened from a Construction Complete mail. */
+  const [editingHint, setEditingHint] = useState('')
+
+  const transfer = async (s: Structure, to: string) => {
+    if (!lotsOk(list, { character: to.trim(), lots: s.lots, state: s.state })) return false
+    await api.transferStructure(s.id, to)
+    setNotice(`${s.name} now belongs to ${to.trim()}. Its ${s.lots} lot${s.lots === 1 ? '' : 's'} moved with it.`)
+    onChange()
+    return true
+  }
 
   useEffect(() => {
     api.machineTypes().then(setTypes)
@@ -80,12 +91,14 @@ export default function Structures({ version, characters, onChange }: Props) {
         onAdd={(m) => {
           // Pre-fill from the mail; a machine type with the same name fills in its stats too.
           const t = types.find((x) => x.name.toLowerCase() === m.name.toLowerCase())
+          setEditingHint(`Dropped by ${m.character}. If you handed it over with /transferStructure, put the new owner in Owner.`)
           setEditing({
             ...newStructure(), character: m.character, name: m.name,
             ...(t ? { typeId: t.id, kind: t.kind, lots: t.lots, maintPerHour: t.maintPerHour, powerPerHour: t.powerPerHour, storage: t.storage, efficiency: t.efficiency } : {})
           })
         }}
         onDismiss={async (m) => { await api.dismissMail(m.id); onChange() }}
+        onTransfer={(s, to) => { void transfer(s, to) }}
         onLink={async (m, id) => {
           const s = list.find((x) => x.id === id)!
           await api.linkMail(m.id, id)
@@ -142,7 +155,12 @@ export default function Structures({ version, characters, onChange }: Props) {
                       </div>
                     )}
                   </td>
-                  <td>{s.character}</td>
+                  <td>
+                    {s.character}
+                    {s.transfers.length > 0 && (
+                      <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>from {s.transfers[s.transfers.length - 1]!.from}, {ago(s.transfers[s.transfers.length - 1]!.ts)}</div>
+                    )}
+                  </td>
                   <td>{s.planet}</td>
                   <td>
                     <select value={s.state} onChange={(e) => changeState(s, e.target.value as StructureState)}>
@@ -160,6 +178,7 @@ export default function Structures({ version, characters, onChange }: Props) {
                       <button className="btn ghost" disabled={!s.resource} title={s.resource ? '' : 'Set the resource first'} onClick={() => setEmptying(s)}>Empty hopper</button>{' '}
                     </>}
                     <button className="btn ghost" onClick={() => setReading(s)}>Reading</button>{' '}
+                    <button className="btn ghost" title="Record a /transferStructure to another character" onClick={() => setTransferring(s)}>Transfer</button>{' '}
                     <button className="btn ghost" onClick={() => setEditing({ ...s })}>Edit</button>
                   </td>
                 </tr>
@@ -207,16 +226,26 @@ export default function Structures({ version, characters, onChange }: Props) {
           onDelete={editingType.id ? async () => { await api.deleteMachineType(editingType.id!); setEditingType(null); onChange() } : undefined}
         />
       )}
+      {transferring && (
+        <TransferModal
+          structure={transferring}
+          characters={charOptions}
+          onClose={() => setTransferring(null)}
+          onSave={async (to) => { if (await transfer(transferring, to)) setTransferring(null) }}
+        />
+      )}
       {editing && (
         <StructureModal
           structure={editing}
           types={types}
           characters={charOptions}
-          onClose={() => setEditing(null)}
+          takenNames={new Set(list.filter((x) => x.id !== editing.id).map((x) => x.name.replace(/\s+/g, ' ').trim().toLowerCase()))}
+          hint={editingHint}
+          onClose={() => { setEditing(null); setEditingHint('') }}
           onSave={async (s) => {
             const state = s.id ? list.find((x) => x.id === s.id)!.state : (s.state ?? 'running')
             if (!lotsOk(list, { character: s.character.trim(), lots: s.lots, state }, s.id)) return
-            await api.saveStructure(s); setEditing(null); onChange()
+            await api.saveStructure(s); setEditing(null); setEditingHint(''); onChange()
           }}
           onSaveType={async (t) => { await api.saveMachineType(t); onChange() }}
           onDelete={editing.id ? async () => { await api.deleteStructure(editing.id!); setEditing(null); onChange() } : undefined}
@@ -262,10 +291,17 @@ export default function Structures({ version, characters, onChange }: Props) {
  * player can rename the structure in the app to the name the game uses. Construction mails offer "Add" and
  * compare the game's lots left with the app's count (only the newest one per character, since older ones are stale).
  */
-function MailPanel({ mails, list, used, onAdd, onDismiss, onLink }: {
+function MailPanel({ mails, list, used, onAdd, onDismiss, onLink, onTransfer }: {
   mails: StructureMail[]; list: Structure[]; used: Map<string, number>
   onAdd: (m: StructureMail) => void; onDismiss: (m: StructureMail) => void; onLink: (m: StructureMail, structureId: number) => void
+  onTransfer: (s: Structure, to: string) => void
 }) {
+  // A matched mail that went to someone other than the app's owner: the owner gets the mail, so it was probably
+  // transferred in game without being recorded here.
+  const movedTo = (m: StructureMail) => {
+    const s = list.find((x) => x.id === m.structureId)
+    return s && m.kind !== 'construction' && s.character.toLowerCase() !== m.character.toLowerCase() ? s : null
+  }
   if (!mails.length) return null
   const newestBuild = new Map<string, number>()
   for (const m of mails) if (m.kind === 'construction' && !newestBuild.has(m.character)) newestBuild.set(m.character, m.id)
@@ -280,7 +316,7 @@ function MailPanel({ mails, list, used, onAdd, onDismiss, onLink }: {
         : `"${m.name}"${m.planet ? ` on ${m.planet}` : ''} has an empty maintenance pool (bank is paying). No structure in the app matched it.`
     }
     let t = `Construction of ${m.name} complete. The game says ${m.lotsLeft} lot${m.lotsLeft === 1 ? '' : 's'} left.`
-    if (newestBuild.get(m.character) === m.id && m.lotsLeft != null) {
+    if (newestBuild.get(m.character) === m.id && m.lotsLeft != null && lotsComparable(m.character, m.ts, list)) {
       const appLeft = MAX_LOTS - (used.get(m.character) ?? 0)
       if (appLeft !== m.lotsLeft) t += ` The app counts ${appLeft} left, so a structure may be missing or not packed up here.`
     }
@@ -298,8 +334,14 @@ function MailPanel({ mails, list, used, onAdd, onDismiss, onLink }: {
                 <td>{m.character}</td>
                 <td style={m.kind === 'structure_maint' && !m.dismissed ? { color: 'var(--bad)' } : undefined}>
                   {text(m)}{m.dismissed && <span className="muted"> (dismissed)</span>}
+                  {movedTo(m) && (
+                    <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                      Owned by {movedTo(m)!.character} in the app, but the mail went to {m.character}.
+                    </div>
+                  )}
                 </td>
                 <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {movedTo(m) && <button className="btn ghost" onClick={() => onTransfer(movedTo(m)!, m.character)}>Record transfer</button>}{' '}
                   {m.kind !== 'construction' && m.structureId == null && list.length > 0 && (
                     <select value="" title="Which structure is this mail about? Its name is saved so later mails match." onChange={(e) => e.target.value && onLink(m, Number(e.target.value))}>
                       <option value="">Link to…</option>
@@ -317,6 +359,32 @@ function MailPanel({ mails, list, used, onAdd, onDismiss, onLink }: {
         </table>
       </div>
     </>
+  )
+}
+
+/** Record a /transferStructure: the structure and its lots go to another character (no mail shows this in game). */
+function TransferModal({ structure, characters, onClose, onSave }: {
+  structure: Structure; characters: string[]; onClose: () => void; onSave: (to: string) => void
+}) {
+  const [to, setTo] = useState('')
+  const same = to.trim().toLowerCase() === structure.character.toLowerCase()
+  return (
+    <div className="modal-back" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ marginTop: 0 }}>Transfer {structure.name}</h3>
+        <p className="muted" style={{ marginTop: 0 }}>
+          After <code>/transferStructure</code> in game, the new owner holds its {structure.lots} lot{structure.lots === 1 ? '' : 's'} and gets its mail.
+          Its stats and bonuses stay the same.
+        </p>
+        <label>Now owned by {structure.character}. New owner</label>
+        <input list="transfer-characters" value={to} autoFocus onChange={(e) => setTo(e.target.value)} />
+        <datalist id="transfer-characters">{characters.filter((c) => c !== structure.character).map((c) => <option key={c} value={c} />)}</datalist>
+        <div className="row" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn" disabled={!to.trim() || same} onClick={() => onSave(to)}>Transfer</button>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -403,8 +471,11 @@ function TypeModal({ type, onClose, onSave, onDelete }: { type: MachineTypeInput
   )
 }
 
-function StructureModal({ structure, types, characters, onClose, onSave, onSaveType, onDelete }: {
+function StructureModal({ structure, types, characters, takenNames, hint, onClose, onSave, onSaveType, onDelete }: {
   structure: StructureInput; types: MachineType[]; characters: string[]
+  /** Lower-case names of the other structures (a duplicate name can't be matched from mail). */
+  takenNames: Set<string>
+  hint?: string
   onClose: () => void; onSave: (s: StructureInput) => void; onSaveType: (t: MachineTypeInput) => void; onDelete?: () => void
 }) {
   const [s, setS] = useState(structure)
@@ -424,10 +495,15 @@ function StructureModal({ structure, types, characters, onClose, onSave, onSaveT
           <option value="">None (enter the numbers below)</option>
           {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
-        <label>Name (to tell yours apart)</label>
-        <input value={s.name} onChange={(e) => setS({ ...s, name: e.target.value })} placeholder="Ore field, Talus" />
-        <label>Character</label>
+        <label>Name (the same name you give it in game)</label>
+        <input value={s.name} onChange={(e) => setS({ ...s, name: e.target.value })} placeholder="Ore Elite 1" />
+        {takenNames.has(s.name.replace(/\s+/g, ' ').trim().toLowerCase()) && (
+          <div className="muted" style={{ fontSize: 12, color: 'var(--warn)' }}>Another structure has this name, so mail can't tell them apart. A unique name (in game too) fixes that.</div>
+        )}
+        <label>Owner (the character holding its lots)</label>
         <input list="structure-characters" value={s.character} onChange={(e) => setS({ ...s, character: e.target.value })} />
+        {hint && <div className="muted" style={{ fontSize: 12 }}>{hint}</div>}
+        {s.id && <div className="muted" style={{ fontSize: 12 }}>To record a /transferStructure, use Transfer on its row instead (keeps the history).</div>}
         <datalist id="structure-characters">{characters.map((c) => <option key={c} value={c} />)}</datalist>
         <label>Planet</label>
         <input value={s.planet} onChange={(e) => setS({ ...s, planet: e.target.value })} />

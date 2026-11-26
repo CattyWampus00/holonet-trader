@@ -23,6 +23,7 @@ const api = {
   dismissMail: (id: number) => call('dismissMail', id),
   linkMail: (eventId: number, structureId: number) => call('linkMail', eventId, structureId),
   removeStructureName: (id: number, name: string) => call('removeStructureName', id, name),
+  transferStructure: (id: number, to: string) => call('transferStructure', id, to),
   listItems: () => call('inventory:list'),
   saveItem: (item: unknown) => call('inventory:save', item),
   deleteItem: (id: number) => call('inventory:delete', id),

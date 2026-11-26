@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attention, drains, forecast, formatHours, hoursWhere, lotsAfter, matchStructure, needsAttention, lotsByCharacter, MAX_LOTS, parseOperateResource, resourceItemName, resourceKeyOf, upkeepPerDay } from '../src/shared/structures'
+import { attention, drains, forecast, formatHours, hoursWhere, lotsAfter, lotsComparable, matchStructure, needsAttention, lotsByCharacter, MAX_LOTS, parseOperateResource, resourceItemName, resourceKeyOf, upkeepPerDay } from '../src/shared/structures'
 
 describe('drains', () => {
   it('follows what the owner confirmed in game', () => {
@@ -160,5 +160,31 @@ describe('matchStructure with other names', () => {
   it('matches a name saved by linking a mail', () => {
     const list = [{ id: 7, character: 'Testchar', name: 'Gear Maker', typeName: null, planet: 'Talus', kind: 'factory' as const, otherNames: ['Equipment Factory'] }]
     expect(matchStructure(list, { character: 'Testchar', name: 'equipment  factory' })).toBe(7)
+  })
+})
+
+describe('transfers (Step 7)', () => {
+  const list = [
+    { id: 1, character: 'Dropper', name: 'Ore Elite 1', typeName: 'Elite Mineral Harvester', planet: 'Tatooine', kind: 'harvester' as const },
+    { id: 2, character: 'Dropper', name: 'Ore Elite 2', typeName: 'Elite Mineral Harvester', planet: 'Tatooine', kind: 'harvester' as const },
+    { id: 3, character: 'Holder', name: 'Ore Elite 3', typeName: 'Elite Mineral Harvester', planet: 'Tatooine', kind: 'harvester' as const }
+  ]
+
+  it('finds a structure owned by another character when the mail went to its real owner', () => {
+    // Transferred in game to 'Newowner' but not recorded in the app: the mail goes to the new owner.
+    expect(matchStructure(list, { character: 'Newowner', name: 'Ore Elite 1' })).toBe(1)
+  })
+
+  it('prefers the receiving character, and an unclear owner match does not fall through to everyone', () => {
+    expect(matchStructure(list, { character: 'Holder', name: 'Elite Mineral Harvester', planet: 'tatooine' })).toBe(3)
+    expect(matchStructure(list, { character: 'Dropper', name: 'Elite Mineral Harvester', planet: 'tatooine' })).toBeNull()
+  })
+
+  it('compares Construction Complete lots only when no transfer touched the character after the mail', () => {
+    const s = [{ transfers: [{ from: 'Dropper', to: 'Holder', ts: 200 }] }]
+    expect(lotsComparable('Dropper', 100, s)).toBe(false) // handed one over after this mail
+    expect(lotsComparable('Holder', 100, s)).toBe(false)
+    expect(lotsComparable('Dropper', 300, s)).toBe(true) // mail after the transfer
+    expect(lotsComparable('Other', 100, s)).toBe(true)
   })
 })

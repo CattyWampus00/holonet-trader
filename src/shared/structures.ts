@@ -188,14 +188,31 @@ export function matchStructure(
 ): number | null {
   const norm = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
   const want = norm(clue.name)
-  const mine = list.filter((s) => norm(s.character) === norm(clue.character) && (!clue.kind || s.kind === clue.kind))
-  // 1. The custom name the player typed, or another name saved by linking a mail. 2. The machine type's name,
-  // narrowed by planet when the mail gives one. Two or more still fitting means the mail can't say which one,
-  // so nothing is changed (null).
-  const byName = mine.filter((s) => norm(s.name) === want || (s.otherNames ?? []).some((n) => norm(n) === want))
-  if (byName.length) return byName.length === 1 ? byName[0]!.id : null
-  const byType = mine.filter((s) => norm(s.typeName) === want && (!clue.planet || norm(s.planet) === norm(clue.planet)))
-  return byType.length === 1 ? byType[0]!.id : null
+  // Within a pool: 1. the custom name the player typed, or another name saved by linking a mail; 2. the machine
+  // type's name, narrowed by planet when the mail gives one. Two or more still fitting means the mail can't say
+  // which one, so nothing is changed: 'unclear' stops the search instead of trying a wider pool.
+  const pick = (pool: typeof list): number | 'unclear' | null => {
+    const byName = pool.filter((s) => norm(s.name) === want || (s.otherNames ?? []).some((n) => norm(n) === want))
+    if (byName.length) return byName.length === 1 ? byName[0]!.id : 'unclear'
+    const byType = pool.filter((s) => norm(s.typeName) === want && (!clue.planet || norm(s.planet) === norm(clue.planet)))
+    return byType.length === 1 ? byType[0]!.id : byType.length ? 'unclear' : null
+  }
+  const ofKind = list.filter((s) => !clue.kind || s.kind === clue.kind)
+  // The owner gets the mail, so the receiving character's structures come first. If none fit, the structure may have
+  // been transferred in game without being recorded here (/transferStructure sends no mail), so try everyone's.
+  const own = pick(ofKind.filter((s) => norm(s.character) === norm(clue.character)))
+  if (own !== null) return own === 'unclear' ? null : own
+  const any = pick(ofKind)
+  return any === 'unclear' ? null : any
+}
+
+/**
+ * Whether the Construction Complete "lots remaining" can be compared with the app's count: only when no transfer
+ * to or from that character was recorded after the mail (a transfer changes the count the mail saw).
+ */
+export function lotsComparable(character: string, mailTs: number, structures: { transfers: { from: string; to: string; ts: number }[] }[]): boolean {
+  const c = character.toLowerCase()
+  return !structures.some((s) => s.transfers.some((t) => t.ts > mailTs && (t.from.toLowerCase() === c || t.to.toLowerCase() === c)))
 }
 
 /**

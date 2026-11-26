@@ -210,6 +210,8 @@ export interface Structure {
   resource: HarvesterResource | null
   /** Extra names it matches in mail, saved by linking a mail to it (for example a name changed in game). */
   otherNames: string[]
+  /** /transferStructure history (entered by hand), oldest first. `character` is always the current owner. */
+  transfers: { from: string; to: string; ts: number }[]
   /** State history, oldest first. */
   history: { state: import('./structures').StructureState; ts: number }[]
   /** The newest reading of each number (a reading may leave some empty), used by the countdowns. */
@@ -220,7 +222,7 @@ export interface Structure {
     hopper: import('./structures').Stamped | null
   }
 }
-export type StructureInput = Omit<Structure, 'id' | 'typeName' | 'state' | 'stateSince' | 'lastReading' | 'resource' | 'otherNames' | 'history' | 'latest'> & {
+export type StructureInput = Omit<Structure, 'id' | 'typeName' | 'state' | 'stateSince' | 'lastReading' | 'resource' | 'otherNames' | 'transfers' | 'history' | 'latest'> & {
   id?: number
   /** Only used when creating: the state it starts in. */
   state?: import('./structures').StructureState

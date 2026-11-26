@@ -126,6 +126,10 @@ export class Store {
     }
     // Step 6: when the player dismissed a structure notice (NULL = still showing).
     if (!cols.some((c) => c.name === 'dismissed_at')) this.db.exec('ALTER TABLE events ADD COLUMN dismissed_at INTEGER')
+    // Step 7: /transferStructure hands a structure (and its lots) to another character. No mail shows it, so it is entered by hand.
+    this.db.exec(`CREATE TABLE IF NOT EXISTS structure_owners(
+      id INTEGER PRIMARY KEY, structure_id INTEGER NOT NULL REFERENCES structures(id) ON DELETE CASCADE,
+      from_char TEXT NOT NULL, to_char TEXT NOT NULL, ts INTEGER NOT NULL)`)
     this.db.exec(`CREATE TABLE IF NOT EXISTS structure_names(
       structure_id INTEGER NOT NULL REFERENCES structures(id) ON DELETE CASCADE, name TEXT NOT NULL, PRIMARY KEY(structure_id, name))`)
   }
@@ -256,6 +260,25 @@ export class Store {
   /** Undo a wrong link: the structure stops matching this name. Mails already tied to it stay tied. */
   removeStructureName(structureId: number, name: string): void {
     this.db.prepare('DELETE FROM structure_names WHERE structure_id=? AND name=?').run(structureId, name)
+  }
+
+  /**
+   * Record a /transferStructure: the structure (and its lots) now belongs to `to`. Kept as history so the
+   * Construction Complete lots check can tell when a character's count changed. Transferring to the current owner does nothing.
+   */
+  transferStructure(id: number, to: string, ts = Math.floor(Date.now() / 1000)): void {
+    const owner = to.trim()
+    const s = this.db.prepare('SELECT character FROM structures WHERE id=?').get(id) as { character: string } | undefined
+    if (!s || !owner || s.character.toLowerCase() === owner.toLowerCase()) return
+    this.transaction(() => {
+      this.db.prepare('INSERT INTO structure_owners(structure_id, from_char, to_char, ts) VALUES(?,?,?,?)').run(id, s.character, owner, ts)
+      this.db.prepare('UPDATE structures SET character=? WHERE id=?').run(owner, id)
+    })
+  }
+
+  /** Transfers of one structure, oldest first. */
+  transfers(id: number): { from: string; to: string; ts: number }[] {
+    return this.db.prepare('SELECT from_char AS "from", to_char AS "to", ts FROM structure_owners WHERE structure_id=? ORDER BY ts, id').all(id) as never
   }
 
   /** Hide a structure mail from the banner (it stays in the mail list, greyed). */
@@ -395,6 +418,7 @@ export class Store {
           : null,
         resource: r.kind === 'harvester' ? this.currentResource(r.id as number) : null,
         otherNames: this.otherNames(r.id as number),
+        transfers: this.transfers(r.id as number),
         history: this.structureStates(r.id as number),
         latest: {
           maint: this.latestValue(r.id as number, 'surplus_maint'),

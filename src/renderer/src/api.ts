@@ -39,6 +39,7 @@ export interface Api {
   dismissMail(id: number): Promise<void>
   linkMail(eventId: number, structureId: number): Promise<void>
   removeStructureName(id: number, name: string): Promise<void>
+  transferStructure(id: number, to: string): Promise<void>
   listItems(): Promise<InventoryItem[]>
   saveItem(i: ItemInput): Promise<number>
   deleteItem(id: number): Promise<void>

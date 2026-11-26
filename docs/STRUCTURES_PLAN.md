@@ -172,7 +172,9 @@ Problem found in testing: a "maintenance pool empty" mail that matches no struct
 
 ---
 
-## Step 7: structure transfers (planned)
+## Step 7: structure transfers (DONE 2026-11-26)
+
+Built as planned: `structure_owners(structure_id, from_char, to_char, ts)`, `Store.transferStructure` (moves `character`, logs history; same owner = no-op), `Structure.transfers`. Transfer button and modal per row (lots check on the new owner); the Character column shows "from X, when". `matchStructure` tries the receiving character's structures first, then everyone's; an unclear match in the owner's own structures stops there. A mail matched to a structure owned by someone else shows "Owned by X in the app, but the mail went to Y" with **Record transfer**. `lotsComparable` skips the Construction Complete lots check when a transfer touched that character after the mail. The structure form says Owner, asks for the in-game name, warns on a duplicate name, and (from a Construction Complete mail) names the dropper.
 
 How it works in game (owner, 2026-11-26): one character with all the harvester buffs and expertise drops elite harvesters, then `/transferStructure <player>` hands each one to another character who has the lots and is close by. The bonuses stay with the harvester. Widely used.
 

@@ -311,3 +311,18 @@ describe('Clearing structure notices (Step 6)', () => {
     expect(s.structureMails()[0]).toMatchObject({ structureId: id, dismissed: true })
   })
 })
+
+describe('Structure transfers (Step 7)', () => {
+  it('moves the structure and its lots to the new owner and keeps the history', () => {
+    const s = new Store(':memory:')
+    const id = s.saveStructure({ typeId: null, planet: 'Tatooine', notes: '', storage: 431000, efficiency: null, character: 'Dropper', name: 'Ore Elite 1', kind: 'harvester', lots: 3, maintPerHour: 84, powerPerHour: 165, state: 'running' })
+    s.transferStructure(id, ' Holder ', 500)
+    s.transferStructure(id, 'holder', 600) // already the owner: nothing
+    const h = s.listStructures()[0]!
+    expect(h.character).toBe('Holder')
+    expect(h.transfers).toEqual([{ from: 'Dropper', to: 'Holder', ts: 500 }])
+    // Mail now goes to the new owner and matches.
+    s.insertEvent('Holder', { mailId: 'm1', timestamp: Math.floor(Date.now() / 1000) + 60, kind: 'structure_maint', structure: 'Ore Elite 1', planet: 'tatooine' })
+    expect(s.structureMails()[0]!.structureId).toBe(id)
+  })
+})

@@ -117,6 +117,7 @@ function registerIpc() {
   ipcMain.handle('dismissMail', (_e, id: number) => store.dismissMail(id))
   ipcMain.handle('linkMail', (_e, eventId: number, structureId: number) => store.linkMail(eventId, structureId))
   ipcMain.handle('removeStructureName', (_e, id: number, name: string) => store.removeStructureName(id, name))
+  ipcMain.handle('transferStructure', (_e, id: number, to: string) => store.transferStructure(id, to))
   ipcMain.handle('inventory:list', () => store.listItems())
   ipcMain.handle('inventory:save', (_e, item) => store.saveItem(item))
   ipcMain.handle('inventory:delete', (_e, id: number) => store.deleteItem(id))
