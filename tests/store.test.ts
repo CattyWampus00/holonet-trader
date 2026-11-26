@@ -135,3 +135,44 @@ describe('Store character filter', () => {
     expect(rows[0]!.character).toBe('Beta')
   })
 })
+
+describe('Store structures', () => {
+  const elite = { name: 'My Elite Ore Harvester', kind: 'harvester' as const, lots: 3, maintPerHour: 84, powerPerHour: 165, storage: 431046, efficiency: null }
+  const fromType = (typeId: number, over: Partial<Parameters<Store['saveStructure']>[0]> = {}) => ({
+    character: 'Testa', typeId, name: 'Ore field 1', kind: 'harvester' as const, planet: 'Talus', notes: '',
+    lots: 3, maintPerHour: 84, powerPerHour: 165, storage: 431046, efficiency: null, ...over
+  })
+
+  it('saves machine types and structures that keep their own copy of the stats', () => {
+    const s = new Store(':memory:')
+    const t = s.saveMachineType(elite)
+    expect(s.listMachineTypes()).toEqual([{ id: t, ...elite }])
+    const id = s.saveStructure(fromType(t, { storage: 430831 })) // this deed's storage differs a little
+    s.saveMachineType({ id: t, ...elite, maintPerHour: 90 }) // editing the type later...
+    const [st] = s.listStructures()
+    expect(st).toMatchObject({ id, typeName: 'My Elite Ore Harvester', maintPerHour: 84, storage: 430831, state: 'running', lastReading: null })
+    s.deleteMachineType(t) // ...or deleting it does not touch the structure's numbers
+    expect(s.listStructures()[0]).toMatchObject({ typeId: null, typeName: null, maintPerHour: 84 })
+  })
+
+  it('keeps a state history and only records real changes', () => {
+    const s = new Store(':memory:')
+    const id = s.saveStructure(fromType(s.saveMachineType(elite)))
+    s.setStructureState(id, 'idle', 2_000_000_000)
+    s.setStructureState(id, 'idle', 2_000_000_100) // same state: ignored
+    s.setStructureState(id, 'packed', 2_000_000_200)
+    expect(s.structureStates(id).map((x) => x.state)).toEqual(['running', 'idle', 'packed'])
+    expect(s.listStructures()[0]).toMatchObject({ state: 'packed', stateSince: 2_000_000_200 })
+  })
+
+  it('stores readings and returns the latest one', () => {
+    const s = new Store(':memory:')
+    const id = s.saveStructure(fromType(s.saveMachineType(elite)))
+    s.addReading(id, { surplusMaint: 63367, surplusPower: 110847, extractionRate: null, hopperPct: 0 }, 2_000_000_000)
+    s.addReading(id, { surplusMaint: null, surplusPower: null, extractionRate: null, hopperPct: null }, 2_000_000_500) // empty: skipped
+    s.addReading(id, { surplusMaint: 60000, surplusPower: null, extractionRate: 25, hopperPct: 12 }, 2_000_000_300)
+    expect(s.listStructures()[0]!.lastReading).toEqual({ ts: 2_000_000_300, surplusMaint: 60000, surplusPower: null, extractionRate: 25, hopperPct: 12 })
+    s.deleteStructure(id)
+    expect(s.listStructures()).toEqual([])
+  })
+})

@@ -1,6 +1,6 @@
 # Plan: retired resources, structures (harvesters and factories)
 
-Status: **Step 1 BUILT (2026-11-26); steps 2 to 5 are plan only** (agreed with the owner 2026-11-26). Build in the order of the steps below; each step is its own release so it can be tried in game before the next one builds on it.
+Status: **Steps 1 and 2 BUILT (2026-11-26); steps 3 to 5 are plan only** (agreed with the owner 2026-11-26). Build in the order of the steps below; each step is its own release so it can be tried in game before the next one builds on it.
 
 Ground rules that still apply: the app only reads files the player creates (never the game's folders), no native modules, the 8 themes stay locked (new UI uses theme variables only), fake names in tests.
 
@@ -36,7 +36,9 @@ Banner and badge skip archived items; archived items keep their sales matched; r
 
 ---
 
-## Step 2: machine types and structures
+## Step 2: machine types and structures (DONE 2026-11-26)
+
+Built as the **Structures** tab: lots per character (cards), structures table (state picker with "since", last reading, Reading and Edit), machine types table, and modals for type, structure (picking a type copies its stats; "Save as machine type"; over-10-lots confirm) and reading (Maintenance Pool, Power Reserves, and for harvesters Actual Rate and Hopper Capacity %). Rules in `src/shared/structures.ts` (`drains`, `lotsByCharacter`, `lotsAfter`), tests in `tests/structures.test.ts` and `tests/store.test.ts`. Readings are stored but not turned into countdowns yet (Step 4).
 
 ### Rule: enter what the game shows, never model modifiers
 Maintenance, power and extraction all have modifiers (merchant, player expertise, city, buffs, weekend double extraction). The app does **not** try to calculate them: the game's own windows already show the actual values after every modifier, so the player copies those. When a modifier changes (new expertise, moving into a city, a buff ending, the weekend rate ending), the player updates the number from the same window.

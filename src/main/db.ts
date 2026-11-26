@@ -3,7 +3,8 @@ import { DatabaseSync } from 'node:sqlite'
 import { summarizeCustomers, type SaleLine } from '../shared/customers'
 import { cleanItemName, itemKey } from '../shared/mailParser'
 import { classifyTrend, summarize, unitPrice } from '../shared/priceStats'
-import type { CustomerRow, InventoryItem, ParsedMail, PricePointRow, PriceRow, PriceSeries, SaleRow } from '../shared/types'
+import type { CustomerRow, InventoryItem, MachineType, MachineTypeInput, ParsedMail, PricePointRow, PriceRow, PriceSeries, SaleRow, Structure, StructureInput, StructureReading } from '../shared/types'
+import type { StructureKind, StructureState } from '../shared/structures'
 
 /**
  * Bump this whenever the mail parser starts understanding mails it used to skip.
@@ -41,6 +42,21 @@ export class Store {
         character TEXT NOT NULL, file TEXT NOT NULL, PRIMARY KEY(character, file));
       CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS ignored_names(item_key TEXT PRIMARY KEY, ts INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS machine_types(
+        id INTEGER PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, lots INTEGER NOT NULL DEFAULT 0,
+        maint_per_hour REAL, power_per_hour REAL, storage INTEGER, efficiency REAL);
+      CREATE TABLE IF NOT EXISTS structures(
+        id INTEGER PRIMARY KEY, character TEXT NOT NULL,
+        type_id INTEGER REFERENCES machine_types(id) ON DELETE SET NULL,
+        name TEXT NOT NULL, kind TEXT NOT NULL, planet TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+        lots INTEGER NOT NULL DEFAULT 0, maint_per_hour REAL, power_per_hour REAL, storage INTEGER, efficiency REAL,
+        created_ts INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS structure_states(
+        id INTEGER PRIMARY KEY, structure_id INTEGER NOT NULL REFERENCES structures(id) ON DELETE CASCADE,
+        state TEXT NOT NULL, ts INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS structure_readings(
+        id INTEGER PRIMARY KEY, structure_id INTEGER NOT NULL REFERENCES structures(id) ON DELETE CASCADE,
+        ts INTEGER NOT NULL, surplus_maint REAL, surplus_power REAL, extraction_rate REAL, hopper_pct REAL);
     `)
     this.migratePowerupUses(path)
     this.addArchivedColumn()
@@ -220,6 +236,92 @@ export class Store {
                   AND item_key NOT IN (SELECT item_key FROM ignored_names)
                 GROUP BY item_key ORDER BY sales DESC LIMIT 300`)
       .all() as never
+  }
+
+  // ---- structures (harvesters and factories) ------------------------------
+  listMachineTypes(): MachineType[] {
+    const rows = this.db.prepare('SELECT * FROM machine_types ORDER BY name COLLATE NOCASE').all() as Record<string, unknown>[]
+    return rows.map((r) => ({
+      id: r.id as number, name: r.name as string, kind: r.kind as StructureKind, lots: r.lots as number,
+      maintPerHour: num(r.maint_per_hour), powerPerHour: num(r.power_per_hour), storage: num(r.storage), efficiency: num(r.efficiency)
+    }))
+  }
+
+  saveMachineType(t: MachineTypeInput): number {
+    const vals = [t.name.trim(), t.kind, t.lots, t.maintPerHour, t.powerPerHour, t.storage, t.efficiency] as const
+    if (t.id) {
+      this.db.prepare('UPDATE machine_types SET name=?, kind=?, lots=?, maint_per_hour=?, power_per_hour=?, storage=?, efficiency=? WHERE id=?').run(...vals, t.id)
+      return t.id
+    }
+    return Number(this.db.prepare('INSERT INTO machine_types(name,kind,lots,maint_per_hour,power_per_hour,storage,efficiency) VALUES(?,?,?,?,?,?,?)').run(...vals).lastInsertRowid)
+  }
+
+  /** Structures made from this type keep their own copied stats; they just lose the link to the type. */
+  deleteMachineType(id: number): void {
+    this.db.prepare('DELETE FROM machine_types WHERE id=?').run(id)
+  }
+
+  listStructures(): Structure[] {
+    const rows = this.db
+      .prepare(`SELECT s.*, t.name AS type_name,
+                  (SELECT state FROM structure_states WHERE structure_id = s.id ORDER BY ts DESC, id DESC LIMIT 1) AS state,
+                  (SELECT ts FROM structure_states WHERE structure_id = s.id ORDER BY ts DESC, id DESC LIMIT 1) AS state_since
+                FROM structures s LEFT JOIN machine_types t ON t.id = s.type_id
+                ORDER BY s.character COLLATE NOCASE, s.name COLLATE NOCASE`)
+      .all() as Record<string, unknown>[]
+    const lastReading = this.db.prepare('SELECT * FROM structure_readings WHERE structure_id=? ORDER BY ts DESC, id DESC LIMIT 1')
+    return rows.map((r) => {
+      const rd = lastReading.get(r.id as number) as Record<string, unknown> | undefined
+      return {
+        id: r.id as number, character: r.character as string, typeId: num(r.type_id), typeName: (r.type_name as string | null) ?? null,
+        name: r.name as string, kind: r.kind as StructureKind, planet: r.planet as string, notes: r.notes as string, lots: r.lots as number,
+        maintPerHour: num(r.maint_per_hour), powerPerHour: num(r.power_per_hour), storage: num(r.storage), efficiency: num(r.efficiency),
+        state: ((r.state as StructureState | null) ?? 'packed'), stateSince: (r.state_since as number | null) ?? (r.created_ts as number),
+        lastReading: rd
+          ? { ts: rd.ts as number, surplusMaint: num(rd.surplus_maint), surplusPower: num(rd.surplus_power), extractionRate: num(rd.extraction_rate), hopperPct: num(rd.hopper_pct) }
+          : null
+      }
+    })
+  }
+
+  /** Create or edit a structure. A new one starts in `s.state` (default Running). */
+  saveStructure(s: StructureInput): number {
+    const vals = [s.character.trim(), s.typeId, s.name.trim(), s.kind, s.planet.trim(), s.notes, s.lots, s.maintPerHour, s.powerPerHour, s.storage, s.efficiency] as const
+    if (s.id) {
+      this.db.prepare(`UPDATE structures SET character=?, type_id=?, name=?, kind=?, planet=?, notes=?, lots=?, maint_per_hour=?, power_per_hour=?,
+                       storage=?, efficiency=? WHERE id=?`).run(...vals, s.id)
+      return s.id
+    }
+    const now = Math.floor(Date.now() / 1000)
+    return this.transaction(() => {
+      const id = Number(this.db.prepare(`INSERT INTO structures(character,type_id,name,kind,planet,notes,lots,maint_per_hour,power_per_hour,storage,efficiency,created_ts)
+                                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(...vals, now).lastInsertRowid)
+      this.db.prepare('INSERT INTO structure_states(structure_id,state,ts) VALUES(?,?,?)').run(id, s.state ?? 'running', now)
+      return id
+    })
+  }
+
+  deleteStructure(id: number): void {
+    this.db.prepare('DELETE FROM structures WHERE id=?').run(id)
+  }
+
+  /** Record a state change with the time it happened. Saving the state it is already in does nothing. */
+  setStructureState(id: number, state: StructureState, ts = Math.floor(Date.now() / 1000)): void {
+    const cur = this.db.prepare('SELECT state FROM structure_states WHERE structure_id=? ORDER BY ts DESC, id DESC LIMIT 1').get(id) as { state: string } | undefined
+    if (cur?.state === state) return
+    this.db.prepare('INSERT INTO structure_states(structure_id,state,ts) VALUES(?,?,?)').run(id, state, ts)
+  }
+
+  /** State history, oldest first (used by the countdowns in a later step). */
+  structureStates(id: number): { state: StructureState; ts: number }[] {
+    return this.db.prepare('SELECT state, ts FROM structure_states WHERE structure_id=? ORDER BY ts, id').all(id) as never
+  }
+
+  /** Save one check-in. Every field is optional; a reading with nothing in it is not saved. */
+  addReading(id: number, r: Omit<StructureReading, 'ts'>, ts = Math.floor(Date.now() / 1000)): void {
+    if ([r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct].every((v) => v == null)) return
+    this.db.prepare('INSERT INTO structure_readings(structure_id,ts,surplus_maint,surplus_power,extraction_rate,hopper_pct) VALUES(?,?,?,?,?,?)')
+      .run(id, ts, r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct)
   }
 
   /** Hide a sale name from "Sales not matched" (a name the player will never stock). */
@@ -403,4 +505,9 @@ function toItem(r: Record<string, unknown>): InventoryItem {
     costEach: r.cost_each as number, lowThreshold: (r.low_threshold as number | null) ?? null, notes: r.notes as string,
     archived: r.archived_at != null
   }
+}
+
+/** SQLite gives NULL for empty number columns; keep that as null, everything else as a number. */
+function num(v: unknown): number | null {
+  return v == null ? null : Number(v)
 }

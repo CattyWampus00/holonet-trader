@@ -9,9 +9,10 @@ import SettingsPage from './pages/SettingsPage'
 import Customers from './pages/Customers'
 import Prices from './pages/Prices'
 import Sales from './pages/Sales'
+import Structures from './pages/Structures'
 
-type Tab = 'dashboard' | 'sales' | 'prices' | 'customers' | 'inventory' | 'settings'
-const TABS: [Tab, string][] = [['dashboard', 'Dashboard'], ['sales', 'Sales Log'], ['prices', 'Prices'], ['customers', 'Customers'], ['inventory', 'Inventory'], ['settings', 'Settings']]
+type Tab = 'dashboard' | 'sales' | 'prices' | 'customers' | 'inventory' | 'structures' | 'settings'
+const TABS: [Tab, string][] = [['dashboard', 'Dashboard'], ['sales', 'Sales Log'], ['prices', 'Prices'], ['customers', 'Customers'], ['inventory', 'Inventory'], ['structures', 'Structures'], ['settings', 'Settings']]
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('dashboard')
@@ -66,6 +67,7 @@ export default function App() {
         {tab === 'prices' && <Prices version={version} characters={settings.location?.characters ?? []} />}
         {tab === 'customers' && <Customers version={version} characters={settings.location?.characters ?? []} />}
         {tab === 'inventory' && <Inventory version={version} items={items} settings={settings} onChange={reload} />}
+        {tab === 'structures' && <Structures version={version} characters={(settings.location?.characters ?? []).map((c) => c.name)} onChange={reload} />}
         {tab === 'settings' && <SettingsPage settings={settings} onChange={reload} />}
       </main>
     </div>

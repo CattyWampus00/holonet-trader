@@ -1,5 +1,6 @@
 import type { ThemeId } from '@shared/themes'
-import type { CustomerRow, DetectedLocation, InventoryItem, PriceRow, PriceSeries, SaleRow, ScanResult } from '@shared/types'
+import type { CustomerRow, DetectedLocation, InventoryItem, MachineType, MachineTypeInput, PriceRow, PriceSeries, SaleRow, ScanResult, Structure, StructureInput, StructureReading } from '@shared/types'
+import type { StructureState } from '@shared/structures'
 
 export interface Settings { serverDir: string | null; lowThreshold: number; location: DetectedLocation | null; theme: ThemeId; autoUpdate: boolean; version: string }
 export interface Row { name: string; sales: number; revenue: number; units?: number }
@@ -44,6 +45,14 @@ export interface Api {
   ignoreName(key: string): Promise<void>
   unignoreName(key: string): Promise<void>
   ignoredNames(): Promise<IgnoredName[]>
+  machineTypes(): Promise<MachineType[]>
+  saveMachineType(t: MachineTypeInput): Promise<number>
+  deleteMachineType(id: number): Promise<void>
+  structures(): Promise<Structure[]>
+  saveStructure(s: StructureInput): Promise<number>
+  deleteStructure(id: number): Promise<void>
+  setStructureState(id: number, state: StructureState): Promise<void>
+  addReading(id: number, r: Omit<StructureReading, 'ts'>): Promise<void>
   linkAlias(key: string, itemId: number): Promise<void>
   /** One item's links, or every link when no id is given. */
   linkedNames(itemId?: number): Promise<LinkedName[]>

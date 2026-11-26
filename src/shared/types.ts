@@ -130,3 +130,50 @@ export interface PriceSeries {
   /** Oldest first, ready for a chart. */
   points: PricePointRow[]
 }
+
+/** A machine type the player saved: fixed stats copied from the game's Structure Status window. */
+export interface MachineType {
+  id: number
+  name: string
+  kind: import('./structures').StructureKind
+  lots: number
+  maintPerHour: number | null
+  powerPerHour: number | null
+  storage: number | null
+  efficiency: number | null
+}
+export type MachineTypeInput = Omit<MachineType, 'id'> & { id?: number }
+
+/** One check-in, copied from Structure Status (and the Operate panel for harvesters). Empty fields stay null. */
+export interface StructureReading {
+  ts: number
+  surplusMaint: number | null
+  surplusPower: number | null
+  extractionRate: number | null
+  hopperPct: number | null
+}
+
+/** One real placed (or packed-up) harvester or factory. It keeps its own copy of the type's stats. */
+export interface Structure {
+  id: number
+  character: string
+  typeId: number | null
+  typeName: string | null
+  name: string
+  kind: import('./structures').StructureKind
+  planet: string
+  notes: string
+  lots: number
+  maintPerHour: number | null
+  powerPerHour: number | null
+  storage: number | null
+  efficiency: number | null
+  state: import('./structures').StructureState
+  stateSince: number
+  lastReading: StructureReading | null
+}
+export type StructureInput = Omit<Structure, 'id' | 'typeName' | 'state' | 'stateSince' | 'lastReading'> & {
+  id?: number
+  /** Only used when creating: the state it starts in. */
+  state?: import('./structures').StructureState
+}
