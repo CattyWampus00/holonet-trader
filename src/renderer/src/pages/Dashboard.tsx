@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { cleanItemName } from '@shared/mailParser'
-import type { CharacterInfo, InventoryItem } from '@shared/types'
+import type { CharacterInfo, InventoryItem, Structure } from '@shared/types'
 import { needsRestock } from '@shared/stock'
+import { formatHours, needsAttention, POOL_LABEL, upkeepPerDay } from '@shared/structures'
+import { useNow } from './Structures'
 import { api, credits, type Settings, type Summary, type VendorAlert } from '../api'
 import CharacterSelect from '../components/CharacterSelect'
 import DateRangeBar from '../components/DateRangeBar'
@@ -14,18 +16,23 @@ export default function Dashboard({ version, items, settings, characters }: { ve
   const [character, setCharacter] = useState(loadCharacter)
   const [s, setS] = useState<Summary | null>(null)
   const [alerts, setAlerts] = useState<VendorAlert[]>([])
+  const [structures, setStructures] = useState<Structure[]>([])
 
   useEffect(() => {
     const { from, to } = rangeBounds(range)
     api.summary(from, to, characters.some((c) => c.name === character) ? character : undefined).then(setS)
     api.vendorAlerts().then(setAlerts)
   }, [range, character, characters, version])
+  useEffect(() => { api.structures().then(setStructures) }, [version])
 
   const low = items.filter((i) => needsRestock(i, settings.lowThreshold))
   const t = s?.totals
   const net = t && s ? t.revenue - s.spent.spent : 0
   // Plain total: units on hand times the cost each that was entered. No cost entered adds 0; archived items are left out.
   const inventoryValue = items.reduce((sum, i) => (i.archived ? sum : sum + i.onHand * i.costEach), 0)
+  const now = useNow()
+  const due = needsAttention(structures, now)
+  const upkeep = upkeepPerDay(structures)
 
   return (
     <>
@@ -53,7 +60,30 @@ export default function Dashboard({ version, items, settings, characters }: { ve
             <div className="card"><div className="label">Spent on purchases</div><div className="value">{credits(s.spent.spent)}</div><div className="sub">bought from other vendors</div></div>
             <div className="card"><div className="label">Net after purchases</div><div className={'value ' + (net >= 0 ? 'pos' : 'neg')}>{(net >= 0 ? '+' : '−') + credits(Math.abs(net))}</div><div className="sub">revenue minus purchases</div></div>
             <div className="card"><div className="label">Inventory value</div><div className="value">{credits(inventoryValue)}</div><div className="sub">on hand × cost each, now</div></div>
+            {structures.length > 0 && (
+              <div className="card"><div className="label">Structure upkeep</div><div className="value">{credits(upkeep)}</div><div className="sub">credits a day, about {credits(upkeep * 30)} a month</div></div>
+            )}
           </div>
+          {due.length > 0 && (
+            <>
+              <h3>Needs attention</h3>
+              <div className="panel">
+                <table>
+                  <thead><tr><th>Structure</th><th>Character</th><th>What</th><th className="num">Time left</th></tr></thead>
+                  <tbody>
+                    {due.map((d) => (
+                      <tr key={`${d.id}-${d.what}`}>
+                        <td>{d.name}</td>
+                        <td>{d.character}</td>
+                        <td>{POOL_LABEL[d.what]}</td>
+                        <td className="num" style={d.level === 'urgent' ? { color: 'var(--bad)', fontWeight: 600 } : { color: 'var(--warn)' }}>{formatHours(d.hoursLeft)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
           <h3>Revenue per day</h3>
           <div className="panel" style={{ height: 260 }}>
             <ResponsiveContainer>

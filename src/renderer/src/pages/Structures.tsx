@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import type { HarvesterResource, MachineType, MachineTypeInput, Structure, StructureInput, StructureReading } from '@shared/types'
-import { KIND_LABEL, lotsAfter, lotsByCharacter, MAX_LOTS, parseOperateResource, STATE_LABEL, type StructureKind, type StructureState } from '@shared/structures'
+import {
+  attention, type Countdown, forecast, formatHours, KIND_LABEL, lotsAfter, lotsByCharacter, MAX_LOTS, parseOperateResource, STATE_LABEL,
+  type StructureKind, type StructureState, upkeepPerDay
+} from '@shared/structures'
 import { api, credits } from '../api'
 
 interface Props { version: number; characters: string[]; onChange: () => void }
@@ -36,6 +39,7 @@ export default function Structures({ version, characters, onChange }: Props) {
     api.machineTypes().then(setTypes)
     api.structures().then(setList)
   }, [version])
+  const now = useNow()
 
   const used = lotsByCharacter(list)
   const people = [...new Set([...list.map((s) => s.character)])].sort((a, b) => a.localeCompare(b))
@@ -69,6 +73,11 @@ export default function Structures({ version, characters, onChange }: Props) {
 
       {people.length > 0 && (
         <div className="stats" style={{ marginBottom: 16 }}>
+          <div className="card">
+            <div className="label">Upkeep</div>
+            <div className="value">{credits(upkeepPerDay(list))}</div>
+            <div className="sub">credits a day, about {credits(upkeepPerDay(list) * 30)} a month</div>
+          </div>
           {people.map((c) => {
             const n = used.get(c) ?? 0
             return (
@@ -84,7 +93,7 @@ export default function Structures({ version, characters, onChange }: Props) {
 
       <div className="panel scroll">
         <table>
-          <thead><tr><th>Structure</th><th>Character</th><th>Planet</th><th>State</th><th>Last reading</th><th /></tr></thead>
+          <thead><tr><th>Structure</th><th>Character</th><th>Planet</th><th>State</th><th>Countdowns</th><th /></tr></thead>
           <tbody>
             {list.map((s) => {
               const r = s.lastReading
@@ -112,17 +121,8 @@ export default function Structures({ version, characters, onChange }: Props) {
                     <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>since {ago(s.stateSince)}</div>
                   </td>
                   <td>
-                    {r ? (
-                      <>
-                        {[
-                          r.surplusMaint != null && `maint. ${credits(r.surplusMaint)}`,
-                          r.surplusPower != null && `power ${credits(r.surplusPower)}`,
-                          r.extractionRate != null && `${r.extractionRate} KG/H`,
-                          r.hopperPct != null && `hopper ${r.hopperPct}%`
-                        ].filter(Boolean).join(' · ')}
-                        <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{ago(r.ts)}</div>
-                      </>
-                    ) : <span className="muted">none yet</span>}
+                    <Countdowns s={s} now={now} />
+                    <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{r ? `last reading ${ago(r.ts)}` : 'no reading yet'}</div>
                   </td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {s.kind === 'harvester' && <>
@@ -223,6 +223,44 @@ export default function Structures({ version, characters, onChange }: Props) {
           onSave={async (r) => { await api.addReading(reading.id, r); setReading(null); onChange() }}
         />
       )}
+    </>
+  )
+}
+
+/** Current unix time, updated every minute so countdowns tick while the tab is open. */
+export function useNow(): number {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
+  useEffect(() => {
+    const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 60_000)
+    return () => clearInterval(t)
+  }, [])
+  return now
+}
+
+/** Color for a countdown: red under 2 days, amber under 7, muted when paused. */
+const urgencyStyle = (hoursLeft: number | null, paused: boolean) => {
+  if (paused) return { color: 'var(--muted)' }
+  const a = attention(hoursLeft)
+  return a === 'urgent' ? { color: 'var(--bad)', fontWeight: 600 } : a === 'soon' ? { color: 'var(--warn)' } : {}
+}
+
+/** Maintenance, power and (for harvesters) hopper countdowns for one structure. */
+function Countdowns({ s, now }: { s: Structure; now: number }) {
+  const f = forecast(s, now)
+  const line = (label: string, c: Countdown | null) => {
+    if (!c || (c.paused && c.hoursLeft == null)) return null // a stopped clock with no number has nothing to say
+    return (
+      <div style={{ fontSize: 13, ...urgencyStyle(c.hoursLeft, c.paused) }}>
+        {label}: {c.hoursLeft == null ? <span className="muted">needs a reading</span> : formatHours(c.hoursLeft)}
+        {c.paused && c.hoursLeft != null ? ' (paused)' : ''}
+      </div>
+    )
+  }
+  return (
+    <>
+      {line('Maint.', f.maintenance)}
+      {line('Power', f.power)}
+      {line('Hopper full', f.hopper)}
     </>
   )
 }

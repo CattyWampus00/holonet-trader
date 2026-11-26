@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { drains, lotsAfter, lotsByCharacter, MAX_LOTS, parseOperateResource, resourceItemName, resourceKeyOf } from '../src/shared/structures'
+import { attention, drains, forecast, formatHours, hoursWhere, lotsAfter, needsAttention, lotsByCharacter, MAX_LOTS, parseOperateResource, resourceItemName, resourceKeyOf, upkeepPerDay } from '../src/shared/structures'
 
 describe('drains', () => {
   it('follows what the owner confirmed in game', () => {
@@ -49,5 +49,85 @@ describe('resource names', () => {
 
   it('builds the inventory name', () => {
     expect(resourceItemName(' Crism Siliclastic Ore ', 'Fakeorite')).toBe('Crism Siliclastic Ore (Fakeorite)')
+  })
+})
+
+describe('countdowns', () => {
+  const T = 2_000_000_000
+  const H = 3600
+  const harvester = {
+    kind: 'harvester' as const, maintPerHour: 84, powerPerHour: 165, storage: 431046,
+    history: [{ state: 'running' as const, ts: T - 100 * H }],
+    latest: { maint: { value: 63367, ts: T }, power: { value: 110847, ts: T }, rate: null, hopper: null }
+  }
+
+  it("matches the game's own countdowns right after a reading", () => {
+    const f = forecast(harvester, T)
+    expect(formatHours(f.maintenance.hoursLeft!)).toBe('31 d 10 h') // Structure Status said 31 days, 10 h
+    expect(formatHours(f.power.hoursLeft!)).toBe('27 d 23 h') // and 27 days, 23 h
+    expect(f.hopper).toEqual({ hoursLeft: null, left: null, paused: false }) // no rate or hopper reading yet
+  })
+
+  it('only counts hours in a state that uses each pool', () => {
+    // running 10 h, idle (off) 20 h, packed up since
+    const history = [{ state: 'running' as const, ts: T }, { state: 'idle' as const, ts: T + 10 * H }, { state: 'packed' as const, ts: T + 30 * H }]
+    const f = forecast({ ...harvester, history }, T + 100 * H)
+    expect(f.maintenance.left).toBe(63367 - 84 * 30) // running + idle
+    expect(f.power.left).toBe(110847 - 165 * 10) // running only: an idle harvester uses no power
+    expect(f.maintenance.paused).toBe(true) // a deed uses nothing
+    const factory = forecast({ ...harvester, kind: 'factory', history: history.slice(0, 2) }, T + 30 * H)
+    expect(factory.power.left).toBe(110847 - 165 * 30) // an idle factory still uses power
+    expect(factory.hopper).toBeNull()
+  })
+
+  it('fills the hopper only while running', () => {
+    const history = [{ state: 'running' as const, ts: T }, { state: 'idle' as const, ts: T + 10 * H }]
+    const latest = { ...harvester.latest, rate: { value: 25, ts: T }, hopper: { value: 50, ts: T } }
+    const f = forecast({ ...harvester, history, latest }, T + 40 * H)
+    expect(f.hopper!.left).toBe(431046 * 0.5 - 25 * 10)
+    expect(f.hopper!.paused).toBe(true)
+    expect(f.maintenance.left).toBe(63367 - 84 * 40)
+  })
+
+  it('never goes below empty, and rates the urgency', () => {
+    const f = forecast(harvester, T + 2000 * H)
+    expect(f.maintenance).toMatchObject({ left: 0, hoursLeft: 0 })
+    expect(formatHours(0)).toBe('empty now')
+    expect(attention(47)).toBe('urgent')
+    expect(attention(100)).toBe('soon')
+    expect(attention(24 * 8)).toBeNull()
+    expect(attention(null)).toBeNull()
+  })
+
+  it('adds up upkeep for placed structures only', () => {
+    expect(upkeepPerDay([{ maintPerHour: 84, state: 'running' }, { maintPerHour: 20, state: 'idle' }, { maintPerHour: 84, state: 'packed' }])).toBe((84 + 20) * 24)
+  })
+
+  it('splits hours across state changes', () => {
+    const history = [{ state: 'running' as const, ts: 0 }, { state: 'idle' as const, ts: 10 * H }, { state: 'running' as const, ts: 20 * H }]
+    expect(hoursWhere(history, 5 * H, 25 * H, (s) => s === 'running')).toBe(10)
+    expect(hoursWhere(history, 25 * H, 5 * H, () => true)).toBe(0)
+  })
+})
+
+describe('needsAttention', () => {
+  const T = 2_000_000_000
+  const H = 3600
+  const base = {
+    kind: 'harvester' as const, maintPerHour: 100, powerPerHour: 100, storage: 1000, character: 'Testa',
+    history: [{ state: 'running' as const, ts: T }],
+    latest: { maint: { value: 100 * 24 * 30, ts: T }, power: { value: 100 * 24 * 30, ts: T }, rate: null, hopper: null }
+  }
+  it('lists what is due within a week, soonest first, skipping paused clocks', () => {
+    const list = [
+      { ...base, id: 1, name: 'Fine', latest: base.latest },
+      { ...base, id: 2, name: 'Low power', latest: { ...base.latest, power: { value: 100 * 30, ts: T } } }, // 30 h
+      { ...base, id: 3, name: 'Low maint', latest: { ...base.latest, maint: { value: 100 * 24 * 5, ts: T } } }, // 5 days
+      { ...base, id: 4, name: 'Packed', history: [{ state: 'packed' as const, ts: T }], latest: { ...base.latest, maint: { value: 1, ts: T } } }
+    ]
+    expect(needsAttention(list, T).map((a) => [a.name, a.what, a.level])).toEqual([
+      ['Low power', 'power', 'urgent'],
+      ['Low maint', 'maintenance', 'soon']
+    ])
   })
 })

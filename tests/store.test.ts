@@ -209,6 +209,14 @@ describe('Store structures', () => {
     s.addReading(id, { surplusMaint: null, surplusPower: null, extractionRate: null, hopperPct: null }, 2_000_000_500) // empty: skipped
     s.addReading(id, { surplusMaint: 60000, surplusPower: null, extractionRate: 25, hopperPct: 12 }, 2_000_000_300)
     expect(s.listStructures()[0]!.lastReading).toEqual({ ts: 2_000_000_300, surplusMaint: 60000, surplusPower: null, extractionRate: 25, hopperPct: 12 })
+    // The countdowns use the newest value of each number, even when the newest reading left it empty.
+    expect(s.listStructures()[0]!.latest).toEqual({
+      maint: { value: 60000, ts: 2_000_000_300 }, power: { value: 110847, ts: 2_000_000_000 },
+      rate: { value: 25, ts: 2_000_000_300 }, hopper: { value: 12, ts: 2_000_000_300 }
+    })
+    s.setHarvesterResource(id, { name: 'Fakeorite', type: 'Ore', concentration: null })
+    s.emptyHopper(id, 100, 2_000_000_400) // emptying counts as a hopper reading of 0%
+    expect(s.listStructures()[0]!.latest.hopper).toEqual({ value: 0, ts: 2_000_000_400 })
     s.deleteStructure(id)
     expect(s.listStructures()).toEqual([])
   })

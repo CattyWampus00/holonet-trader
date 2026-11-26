@@ -185,8 +185,17 @@ export interface Structure {
   lastReading: StructureReading | null
   /** Harvesters: the resource being extracted now. */
   resource: HarvesterResource | null
+  /** State history, oldest first. */
+  history: { state: import('./structures').StructureState; ts: number }[]
+  /** The newest reading of each number (a reading may leave some empty), used by the countdowns. */
+  latest: {
+    maint: import('./structures').Stamped | null
+    power: import('./structures').Stamped | null
+    rate: import('./structures').Stamped | null
+    hopper: import('./structures').Stamped | null
+  }
 }
-export type StructureInput = Omit<Structure, 'id' | 'typeName' | 'state' | 'stateSince' | 'lastReading' | 'resource'> & {
+export type StructureInput = Omit<Structure, 'id' | 'typeName' | 'state' | 'stateSince' | 'lastReading' | 'resource' | 'history' | 'latest'> & {
   id?: number
   /** Only used when creating: the state it starts in. */
   state?: import('./structures').StructureState

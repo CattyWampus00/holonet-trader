@@ -38,7 +38,7 @@ Banner and badge skip archived items; archived items keep their sales matched; r
 
 ## Step 2: machine types and structures (DONE 2026-11-26)
 
-Built as the **Structures** tab: lots per character (cards), structures table (state picker with "since", last reading, Reading and Edit), machine types table, and modals for type, structure (picking a type copies its stats; "Save as machine type"; over-10-lots confirm) and reading (Maintenance Pool, Power Reserves, and for harvesters Actual Rate and Hopper Capacity %). Rules in `src/shared/structures.ts` (`drains`, `lotsByCharacter`, `lotsAfter`), tests in `tests/structures.test.ts` and `tests/store.test.ts`. Readings are stored but not turned into countdowns yet (Step 4).
+Built as the **Structures** tab: lots per character (cards), structures table (state picker with "since", last reading, Reading and Edit), machine types table, and modals for type, structure (picking a type copies its stats; "Save as machine type"; over-10-lots confirm) and reading (Maintenance Pool, Power Reserves, and for harvesters Actual Rate and Hopper Capacity %). Rules in `src/shared/structures.ts` (`drains`, `lotsByCharacter`, `lotsAfter`), tests in `tests/structures.test.ts` and `tests/store.test.ts`. Readings drive the countdowns (Step 4).
 
 ### Rule: enter what the game shows, never model modifiers
 Maintenance, power and extraction all have modifiers (merchant, player expertise, city, buffs, weekend double extraction). The app does **not** try to calculate them: the game's own windows already show the actual values after every modifier, so the player copies those. When a modifier changes (new expertise, moving into a city, a buff ending, the weekend rate ending), the player updates the number from the same window.
@@ -138,6 +138,8 @@ From the last snapshot and the state history (only hours in a draining state cou
 - **Upkeep**: actual maintenance per hour × 24 per structure, totalled per day and per month (84/h = 2,016 credits a day).
 
 UI: a **Structures** tab (types, structures, lots per character, hopper log) and a **Needs attention** list on the Dashboard, soonest first.
+
+**DONE (2026-11-26).** `forecast`, `hoursWhere`, `attention`, `needsAttention`, `formatHours` and `upkeepPerDay` in `src/shared/structures.ts`. Each number uses its own latest reading (a reading may leave fields empty). Only hours spent in a draining state count (`drains`); the hopper fills only while Running, and Empty hopper records a 0 % reading. Colors: red under 2 days, amber under 7. The Structures tab has a Countdowns column (ticks every minute, "(paused)" when the state stops the clock) and an Upkeep card; the Dashboard has a Structure upkeep card and the Needs attention table (paused clocks left out). Packed-up deeds cost no upkeep.
 
 ---
 

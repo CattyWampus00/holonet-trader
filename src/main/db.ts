@@ -287,9 +287,23 @@ export class Store {
         lastReading: rd
           ? { ts: rd.ts as number, surplusMaint: num(rd.surplus_maint), surplusPower: num(rd.surplus_power), extractionRate: num(rd.extraction_rate), hopperPct: num(rd.hopper_pct) }
           : null,
-        resource: r.kind === 'harvester' ? this.currentResource(r.id as number) : null
+        resource: r.kind === 'harvester' ? this.currentResource(r.id as number) : null,
+        history: this.structureStates(r.id as number),
+        latest: {
+          maint: this.latestValue(r.id as number, 'surplus_maint'),
+          power: this.latestValue(r.id as number, 'surplus_power'),
+          rate: this.latestValue(r.id as number, 'extraction_rate'),
+          hopper: this.latestValue(r.id as number, 'hopper_pct')
+        }
       }
     })
+  }
+
+  /** Newest non-empty value of one reading column, with when it was read. */
+  private latestValue(id: number, column: 'surplus_maint' | 'surplus_power' | 'extraction_rate' | 'hopper_pct'): { value: number; ts: number } | null {
+    const r = this.db.prepare(`SELECT ${column} AS value, ts FROM structure_readings WHERE structure_id=? AND ${column} IS NOT NULL ORDER BY ts DESC, id DESC LIMIT 1`)
+      .get(id) as { value: number; ts: number } | undefined
+    return r ? { value: Number(r.value), ts: r.ts } : null
   }
 
   /** Create or edit a structure. A new one starts in `s.state` (default Running). */
@@ -395,6 +409,7 @@ export class Store {
       const itemId = target.itemId ?? this.saveItem({ name: target.itemName, onHand: 0, costEach: 0, lowThreshold: null, notes: 'Harvested' })
       this.adjustStock(itemId, units, 'harvest')
       this.db.prepare('INSERT INTO hopper_empties(structure_id,ts,resource,amount,item_id) VALUES(?,?,?,?,?)').run(structureId, ts, res.name, units, itemId)
+      this.addReading(structureId, { surplusMaint: null, surplusPower: null, extractionRate: null, hopperPct: 0 }, ts) // just emptied
       return { itemId, itemName: target.itemName, created }
     })
   }
