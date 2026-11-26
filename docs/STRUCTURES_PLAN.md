@@ -55,6 +55,10 @@ What the game shows (owner's screenshots, 2026-11-26, Elite Mineral Mining Insta
 | Operate panel | Actual Rate | `0.00 KG/H` while off | **the real extraction rate while running.** Enter this one |
 | Operate panel | Capacity | `0%` | how full the hopper is |
 
+Factory (Wearables Factory, Structure Status, same layout): Maintenance Rate `20 cr/hr (26)`, Power Consumption `50 units/hr`, Maintenance Pool `10979 (22 days, 20 h...)`, Power Reserves `19866 (16 days, 13 hou...)`, Factory Production Efficiency `35`. Checks: 10,979 / 20 = 549 h = 22 days 21 h, and 19,866 / 50 = 397 h = 16 days 13 h, matching the game. Factories have no Operate panel numbers to track.
+
+**Scope for the first build: elite harvesters and factories only.** Lower-tier harvesters are added another day (their lots and rates are still unknown); the machine type catalog lets them be added later without code changes.
+
 Checks that the countdown method is right: 63,367 / 84 = 754 h = 31 days 10 h, and 110,847 / 165 = 672 h = 27 days 23 h, both exactly what the game shows. The two maintenance modifiers multiply (126 x 0.80 x 0.84 = 84.7, shown as 84), more proof the app should not try to combine modifiers itself.
 
 Because the game shows its own countdowns, the app can show "the game said 31 d 10 h at your last reading" next to its own estimate; a difference means a typo.
@@ -83,11 +87,16 @@ Any field may be left empty; a countdown that needs an empty field shows "not en
 Changing values (updated by the player when they change): surplus maintenance, surplus power, actual extraction rate, hopper capacity %, hopper amount when emptied, resource being harvested, state. One "reading" form takes them all at once, straight from the two windows, so a check-in costs a few numbers.
 
 ### States
+Confirmed in game by the owner (2026-11-26):
+
 | State | Meaning | Maintenance drains | Power drains | Hopper fills |
 |---|---|---|---|---|
-| Running | placed and on | yes | yes | yes |
-| Idle | placed, off (or factory with nothing to make) | yes (to verify) | no (to verify) | no |
+| Running | placed and on (harvester extracting, factory making items) | yes | yes | yes (harvester) |
+| Idle harvester | placed, turned off | yes | **no** | no |
+| Idle factory | placed, not making items (for example after "Manufacturing station finished") | yes | **yes** (a factory uses power whenever it is placed) | n/a |
 | Packed up | picked up, back to a deed | no | no | no |
+
+When picked up, the deed keeps its leftover surplus maintenance and power, so re-placing continues from those amounts.
 
 Every state change is stored with its time. Nothing stores a "current" amount; amounts are worked out from the history.
 
@@ -142,13 +151,15 @@ Parser work follows the existing rule: pure parser functions with tests on hand-
 
 ## Questions for the owner to check in game (before Step 4)
 
-1. Does a turned-off harvester still use power? (guess: no)
-2. Does a turned-off structure still use maintenance? (guess: yes)
-3. When picked up, does the deed keep its leftover surplus maintenance and power? (deed screenshots suggest yes)
+1. **ANSWERED 2026-11-26:** a turned-off harvester does not use power.
+2. **ANSWERED 2026-11-26:** a turned-off structure still uses maintenance.
+3. **ANSWERED 2026-11-26:** when picked up, the deed keeps its leftover surplus maintenance and power.
 4. **ANSWERED 2026-11-26:** power use per hour is shown in Structure Status as Power Consumption (165 units/hr on the owner's elite mineral harvester), already after modifiers.
 5. **MOSTLY ANSWERED 2026-11-26:** modifiers do change extraction (deed base 44, Spec Rate 57 with the weekend double rate on), and the Operate panel shows Actual Rate while running, so the app uses that instead of a formula. Still to see: Actual Rate on a running harvester, to confirm it is roughly Spec Rate × concentration %.
-6. Does a factory use power only while it is making items?
-7. Lots used by each lower-tier harvester type (elite mineral harvester: 3).
-8. Where does a factory show its actual maintenance and power (Structure Status too)?
+6. **ANSWERED 2026-11-26:** no, a factory uses power whenever it is placed, making items or not.
+7. Lots used by each lower-tier harvester type. **Deferred:** elites first (elite mineral harvester: 3 lots, factory: 1 lot); lower tiers another day.
+8. **ANSWERED 2026-11-26:** factories show actual maintenance and power in Structure Status too (same layout, plus Factory Production Efficiency).
+
+Only question 5's last part is open (Actual Rate on a running harvester), and it does not block Steps 2 or 3.
 
 Whatever the answers, these rules live in data or settings with defaults, so a correction does not need a new version.
