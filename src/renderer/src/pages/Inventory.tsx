@@ -19,7 +19,16 @@ export default function Inventory({ version, items, settings, onChange }: Props)
     api.linkedNames().then(setLinks)
   }, [version])
 
+  const [unlinkingFor, setUnlinkingFor] = useState<InventoryItem | null>(null)
+
   const shown = items.filter((i) => i.name.toLowerCase().includes(filter.toLowerCase()))
+  const linksOf = (itemId: number) => links.filter((l) => l.itemId === itemId)
+  // One link: confirm and undo it straight away. Several: open a list so the player picks which one.
+  const unlinkFrom = async (i: InventoryItem) => {
+    const mine = linksOf(i.id)
+    if (mine.length > 1) return setUnlinkingFor(i)
+    if (mine[0] && (await askAndUnlink(mine[0])) !== null) onChange()
+  }
 
   return (
     <>
@@ -35,14 +44,23 @@ export default function Inventory({ version, items, settings, onChange }: Props)
           <tbody>
             {shown.map((i) => {
               const st = getStockStatus(i.onHand, i.lowThreshold, settings.lowThreshold)
+              const mine = linksOf(i.id)
               return (
                 <tr key={i.id}>
-                  <td>{i.name}</td>
+                  <td>
+                    {i.name}
+                    {mine.length > 0 && (
+                      <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                        Also counts: {mine.map((l) => cleanItemName(l.name)).join(', ')}
+                      </div>
+                    )}
+                  </td>
                   <td><span className={`pill ${st}`}>{st === 'ok' ? 'OK' : st === 'low' ? 'Low' : 'Out'}</span></td>
                   <td className="num">{credits(i.onHand)}</td>
                   <td className="num">{i.lowThreshold ?? <span className="muted">{settings.lowThreshold}</span>}</td>
                   <td className="num">{i.costEach ? credits(i.costEach) : ''}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {mine.length > 0 && <><button className="btn ghost" onClick={() => unlinkFrom(i)}>Unlink{mine.length > 1 ? ` (${mine.length})` : ''}</button>{' '}</>}
                     <button className="btn ghost" onClick={() => setAdjusting(i)}>Restock / adjust</button>{' '}
                     <button className="btn ghost" onClick={() => setEditing({ id: i.id, name: i.name, onHand: i.onHand, costEach: i.costEach, lowThreshold: i.lowThreshold, notes: i.notes })}>Edit</button>
                   </td>
@@ -109,6 +127,17 @@ export default function Inventory({ version, items, settings, onChange }: Props)
 
       {editing && <EditModal item={editing} onClose={() => setEditing(null)} onSave={async (i) => { await api.saveItem(i); setEditing(null); onChange() }}
         onDelete={editing.id ? async () => { await api.deleteItem(editing.id!); setEditing(null); onChange() } : undefined} onChanged={onChange} />}
+      {unlinkingFor && (
+        <div className="modal-back" onClick={() => setUnlinkingFor(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Unlink from {unlinkingFor.name}</h2>
+            <LinkedNames itemId={unlinkingFor.id} onUnlinked={() => onChange()} />
+            <div className="row" style={{ marginTop: 16, justifyContent: 'flex-end' }}>
+              <button className="btn" onClick={() => setUnlinkingFor(null)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
       {adjusting && <AdjustModal item={adjusting} onClose={() => setAdjusting(null)} onSave={async (d, reason) => { await api.adjustStock(adjusting.id, d, reason); setAdjusting(null); onChange() }} />}
     </>
   )
