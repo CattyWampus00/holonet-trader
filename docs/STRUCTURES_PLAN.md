@@ -193,6 +193,39 @@ Bonuses need nothing: readings are the game's actual values, so a transferred ha
 
 ---
 
+## Step 8: houses and vendors (DONE 2026-11-26)
+
+Built: kinds `house` and `vendor` (`KINDS`, `usesPower`, `statesFor`, `stateLabel`: a house is Placed / Packed up, a vendor is Active); `drains()` gives them maintenance only. Optional spot (`structures.x`, `y`) and `events.x`, `y`; both maintenance mails now keep the spot (`PARSER_VERSION` 4, and a re-read fills the spot into mails stored earlier without touching their dismissal). `matchStructure` tries the spot first (same planet, within `SPOT_RADIUS` = 10 m), then names, then for vendor mails the character's only vendor on that planet that has no saved spot. Link to… on a vendor mail saves the mail's spot on the vendor (never the placeholder name). Readings gain `items` (Items in Building / Items For Sale); a house is "nearly full" at 95% of its Maximum Storage Capacity (`storage`). UI: Add vendor (names from sale mails, `Store.vendorNames`), kind-aware form and reading fields, "Saved types" (was "Machine types"), and a red Dashboard banner "Vendor switched off" separate from the bank-paying one. Vendors use 0 lots.
+
+From the owner's screenshots (2026-11-26). Both are player-named and have a set maintenance rate; both use the same countdown math:
+- **Vendor Status**: Condition, Maintenance Rate 6, Maintenance Pool 45,872 (318 days), Number of Items For Sale 412. 45,872 ÷ 6 = 318 days, matches.
+- **House Structure Status**: name, owner, planet and coordinates, maintenance modifiers (e.g. "Merchant modifier: −20 percent"), Maintenance Pool 39,460 (274 days, 0 hours, 40 minutes), Maintenance Rate "6 cr/hr (8)" = 6 actual, 8 base; Number of Items in Building 846, Maximum Storage Capacity 850. 39,460 ÷ 6 = 274 d 0 h 40 m, matches. Enter the actual rate (6), as with harvesters.
+
+Plan:
+1. `StructureKind` gains `house` and `vendor`. `drains()`: both use maintenance only (no power, no hopper), so countdowns, Needs attention and upkeep work unchanged. Upkeep becomes the player's whole daily structure cost.
+2. **Lots**: houses use lots (entered per house, or from a saved type such as "Medium house, 2 lots, 6 cr/hr"); vendors use 0 lots.
+3. **State**: houses Placed / Packed up (a packed house costs nothing); vendors have no state picker (always active).
+4. **Readings**: Maintenance Pool for both. Optional: houses "Items in Building" and "Maximum Storage Capacity" (warn when nearly full); vendors "Items For Sale".
+5. **Mail**: "Structure maintenance pool empty!" should already cover houses (matched by name). "Vendor maintenance pool empty!" is parsed today without a vendor name; once its body shape is known, read the name, match the vendor, record 0 and raise the banner (with Dismiss).
+6. **Add vendor** offers vendor names already seen in sale mails ("Vendor: <name> has sold").
+7. Owner and Transfer work as for other structures.
+
+Answers (owner, 2026-11-26):
+- House lots are **entered by hand** per house (1 to 5 lots; too many house variations for a fixed table).
+- Vendors: **maintenance only**, no vendor limit to track.
+- Vendor mail, found in the owner's saved mail (sender `SWG.<server>.Galactic Housing Authority`):
+  `Your vendor terminal_name:[vendor_terminal] (<x>, <y>  <Planet>) has an empty maintenance pool. It has been deactivated and cannot list new items for sales or be offered items. If you wish to prevent this vendor and the items listed on it from being destroyed, you should immediately add maintenance. ...`
+  Coordinates have decimals (e.g. `-1234.567, 890.12`).
+
+**Consequence: the vendor mail has no vendor name** (the game writes a placeholder, `terminal_name:[vendor_terminal]`), so name matching cannot work for vendors, and Link to… must **not** save that placeholder as another name (it would tie every later vendor mail to one vendor). Instead:
+- Parse the coordinates and planet from both maintenance mails (structure and vendor); today they are thrown away.
+- Structures and vendors get optional **coordinates** (x, y as shown in game; Structure Status shows "PLANET x z y"). A mail whose planet matches and whose coordinates are within a few metres matches that structure.
+- Vendors without coordinates: match when the character has exactly one vendor on that planet; otherwise the mail is unmatched.
+- Link to… on a vendor mail saves the mail's coordinates on that vendor (not the name), so later mails from the same spot match.
+- This mail is more urgent than a structure's: the vendor is **deactivated**, and its items can be destroyed. Show it as urgent (red) with that wording.
+
+---
+
 ## Questions for the owner to check in game (before Step 4)
 
 1. **ANSWERED 2026-11-26:** a turned-off harvester does not use power.

@@ -65,16 +65,20 @@ export function parseMail(raw: string): ParsedMail | null {
       const m = /Vendor:\s*(.+?) is now empty/.exec(body)
       return m ? { ...base, kind: 'vendor_empty', vendor: m[1] } : null
     }
-    case 'Vendor maintenance pool empty!':
-      return { ...base, kind: 'vendor_maint' }
+    case 'Vendor maintenance pool empty!': {
+      // "Your vendor terminal_name:[vendor_terminal] (<x>, <y>  <Planet>) has an empty maintenance pool. It has been
+      // deactivated ..." The game writes a placeholder, not the vendor's name, so only the spot identifies it.
+      const m = /Your vendor .*?\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s+(.+?)\s*\) has an empty maintenance pool/s.exec(body)
+      return m ? { ...base, kind: 'vendor_maint', x: Number(m[1]), y: Number(m[2]), planet: m[3] } : { ...base, kind: 'vendor_maint' }
+    }
     case 'Manufacturing station finished': {
       const m = /Your manufacturing station, (.+?), has stopped making items/s.exec(body)
       return m ? { ...base, kind: 'factory_done', structure: m[1]!.trim() } : null
     }
     case 'Structure maintenance pool empty!': {
       // "Your <name> (<x>, <y>  <planet>) has an empty maintenance pool." Coordinates may be negative.
-      const m = /Your (.+?) \(\s*-?[\d.,]+\s*,\s*-?[\d.,]+\s+(.+?)\s*\) has an empty maintenance pool/s.exec(body)
-      return m ? { ...base, kind: 'structure_maint', structure: m[1]!.trim(), planet: m[2] } : null
+      const m = /Your (.+?) \(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s+(.+?)\s*\) has an empty maintenance pool/s.exec(body)
+      return m ? { ...base, kind: 'structure_maint', structure: m[1]!.trim(), x: Number(m[2]), y: Number(m[3]), planet: m[4] } : null
     }
     case 'Construction Complete': {
       const m = /Construction of your (.+?) is now complete\.\s*You have (\d+) lots? remaining/s.exec(body)

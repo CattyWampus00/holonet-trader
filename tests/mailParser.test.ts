@@ -130,3 +130,23 @@ describe('structure mails', () => {
     expect(parseMail(mail('204', 'SWG.Omega.system', 'Construction Complete', 1777000400, 'Something else entirely.'))).toBeNull()
   })
 })
+
+describe('vendor and structure spots (Step 8)', () => {
+  it('reads the vendor maintenance mail: no real name, only the spot', () => {
+    const r = parseMail(mail('300', 'SWG.Omega.Galactic Housing Authority', 'Vendor maintenance pool empty!', 1777000500,
+      'Your vendor terminal_name:[vendor_terminal] (-1234.567, 890.125  Talus) has an empty maintenance pool. It has been deactivated and cannot list new items for sales or be offered items.'))
+    expect(r).toMatchObject({ kind: 'vendor_maint', x: -1234.567, y: 890.125, planet: 'Talus' })
+    expect(r!.structure).toBeUndefined()
+  })
+
+  it('keeps an odd vendor mail as a plain vendor notice', () => {
+    expect(parseMail(mail('301', 'SWG.Omega.Galactic Housing Authority', 'Vendor maintenance pool empty!', 1777000600, 'Something else.')))
+      .toMatchObject({ kind: 'vendor_maint' })
+  })
+
+  it('reads the spot from a structure maintenance mail', () => {
+    const r = parseMail(mail('302', 'SWG.Omega.system', 'Structure maintenance pool empty!', 1777000700,
+      'Your Test House (1275, -2318  talus) has an empty maintenance pool. It will start deducting from your bank account automatically.'))
+    expect(r).toMatchObject({ structure: 'Test House', x: 1275, y: -2318, planet: 'talus' })
+  })
+})

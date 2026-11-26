@@ -10,7 +10,7 @@ import { matchStructure, resourceItemName, resourceKeyOf, type StructureKind, ty
  * Bump this whenever the mail parser starts understanding mails it used to skip.
  * 2 = thousands separators: commas and dots in credits and item amounts (2026-11-17).
  */
-export const PARSER_VERSION = 3 // 3: structure mails (factory finished, structure maintenance empty, construction complete)
+export const PARSER_VERSION = 4 // 3: structure mails (factory finished, structure maintenance empty, construction complete); 4: spots in maintenance mails
 
 export class Store {
   readonly db: DatabaseSync
@@ -132,6 +132,14 @@ export class Store {
       from_char TEXT NOT NULL, to_char TEXT NOT NULL, ts INTEGER NOT NULL)`)
     this.db.exec(`CREATE TABLE IF NOT EXISTS structure_names(
       structure_id INTEGER NOT NULL REFERENCES structures(id) ON DELETE CASCADE, name TEXT NOT NULL, PRIMARY KEY(structure_id, name))`)
+    // Step 8: spots (maintenance mails give x, y; the vendor mail gives nothing else) and item counts for houses and vendors.
+    const add = (table: string, col: string, type: string) => {
+      const have = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+      if (!have.some((c) => c.name === col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`)
+    }
+    add('events', 'x', 'REAL'); add('events', 'y', 'REAL')
+    add('structures', 'x', 'REAL'); add('structures', 'y', 'REAL')
+    add('structure_readings', 'items', 'INTEGER')
   }
 
   // ---- settings -----------------------------------------------------------
@@ -176,13 +184,17 @@ export class Store {
     const itemId = key ? this.findItemId(key) : null
     const res = this.db
       .prepare(
-        `INSERT OR IGNORE INTO events(character,mail_id,ts,kind,vendor,item_name,item_key,quantity,uses,price,counterparty,city,planet,item_id,structure,lots_left)
-         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        `INSERT OR IGNORE INTO events(character,mail_id,ts,kind,vendor,item_name,item_key,quantity,uses,price,counterparty,city,planet,item_id,structure,lots_left,x,y)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .run(character, p.mailId, p.timestamp, p.kind, p.vendor ?? null, p.itemName ?? null, key, p.quantity ?? 1, p.uses ?? null, p.price ?? 0,
-        p.counterparty ?? null, p.city ?? null, p.planet ?? null, itemId, p.structure ?? null, p.lotsLeft ?? null)
-    if (res.changes === 0) return { inserted: false }
-    if (p.structure) this.applyStructureMail(Number(res.lastInsertRowid), character, p)
+        p.counterparty ?? null, p.city ?? null, p.planet ?? null, itemId, p.structure ?? null, p.lotsLeft ?? null, p.x ?? null, p.y ?? null)
+    if (res.changes === 0) {
+      // Mail read again after a parser update: fill in what older versions did not keep (the spot), leaving the rest as it was.
+      if (p.x != null) this.db.prepare('UPDATE events SET x=?, y=?, planet=COALESCE(planet, ?) WHERE character=? AND mail_id=? AND x IS NULL').run(p.x, p.y ?? null, p.planet ?? null, character, p.mailId)
+      return { inserted: false }
+    }
+    if (p.structure || p.kind === 'vendor_maint') this.applyStructureMail(Number(res.lastInsertRowid), character, p)
     if (p.kind === 'sale' && itemId !== null) {
       this.applySaleToStock(Number(res.lastInsertRowid), itemId, p.quantity ?? 1, p.timestamp)
       return { inserted: true, lowItemId: itemId }
@@ -200,15 +212,16 @@ export class Store {
    */
   private applyStructureMail(eventId: number, character: string, p: ParsedMail): void {
     if (p.kind === 'construction') return
-    const id = matchStructure(this.matchCandidates(), { character, name: p.structure!, planet: p.planet, kind: p.kind === 'factory_done' ? 'factory' : undefined })
+    const kind = p.kind === 'factory_done' ? 'factory' : p.kind === 'vendor_maint' ? 'vendor' : undefined
+    const id = matchStructure(this.matchCandidates(), { character, name: p.structure ?? '', planet: p.planet, kind, x: p.x, y: p.y })
     if (id != null) this.applyMailTo(eventId, id)
   }
 
   /** Structures with their extra mail names, for {@link matchStructure}. */
   private matchCandidates() {
-    const list = this.db.prepare(`SELECT s.id, s.character, s.name, s.planet, s.kind, t.name AS typeName
+    const list = this.db.prepare(`SELECT s.id, s.character, s.name, s.planet, s.kind, s.x, s.y, t.name AS typeName
                                   FROM structures s LEFT JOIN machine_types t ON t.id = s.type_id`).all() as
-      { id: number; character: string; name: string; planet: string; kind: StructureKind; typeName: string | null }[]
+      { id: number; character: string; name: string; planet: string; kind: StructureKind; x: number | null; y: number | null; typeName: string | null }[]
     return list.map((s) => ({ ...s, otherNames: this.otherNames(s.id) }))
   }
 
@@ -230,8 +243,8 @@ export class Store {
       const cur = this.db.prepare('SELECT state, ts FROM structure_states WHERE structure_id=? ORDER BY ts DESC, id DESC LIMIT 1').get(id) as
         { state: StructureState; ts: number } | undefined
       if (cur?.state === 'running' && cur.ts <= e.ts) this.setStructureState(id, 'idle', e.ts)
-    } else if (e.kind === 'structure_maint') {
-      this.addReading(id, { surplusMaint: 0, surplusPower: null, extractionRate: null, hopperPct: null }, e.ts)
+    } else if (e.kind === 'structure_maint' || e.kind === 'vendor_maint') {
+      this.addReading(id, { surplusMaint: 0, surplusPower: null, extractionRate: null, hopperPct: null, items: null }, e.ts)
     }
   }
 
@@ -241,13 +254,18 @@ export class Store {
    * game, which sends no mail).
    */
   linkMail(eventId: number, structureId: number): void {
-    const e = this.db.prepare('SELECT structure FROM events WHERE id=?').get(eventId) as { structure: string | null } | undefined
-    if (!e?.structure) return
+    const e = this.db.prepare('SELECT kind, structure, x, y FROM events WHERE id=?').get(eventId) as
+      { kind: string; structure: string | null; x: number | null; y: number | null } | undefined
+    if (!e || (!e.structure && e.kind !== 'vendor_maint')) return
     this.transaction(() => {
       this.applyMailTo(eventId, structureId)
-      const s = this.db.prepare('SELECT name FROM structures WHERE id=?').get(structureId) as { name: string } | undefined
-      if (s && itemKey(s.name) !== itemKey(e.structure!)) {
-        this.db.prepare('INSERT OR IGNORE INTO structure_names(structure_id, name) VALUES(?,?)').run(structureId, e.structure!.replace(/\s+/g, ' ').trim())
+      const s = this.db.prepare('SELECT name, x FROM structures WHERE id=?').get(structureId) as { name: string; x: number | null } | undefined
+      if (!s) return
+      // The spot identifies it best (and is all a vendor mail has). Kept only when none was entered, so a typed spot wins.
+      if (e.x != null && s.x == null) this.db.prepare('UPDATE structures SET x=?, y=? WHERE id=?').run(e.x, e.y, structureId)
+      // Vendor mails carry a placeholder, not a name: saving it would tie every later vendor mail to this vendor.
+      if (e.structure && e.kind !== 'vendor_maint' && itemKey(s.name) !== itemKey(e.structure)) {
+        this.db.prepare('INSERT OR IGNORE INTO structure_names(structure_id, name) VALUES(?,?)').run(structureId, e.structure.replace(/\s+/g, ' ').trim())
       }
     })
   }
@@ -281,6 +299,12 @@ export class Store {
     return this.db.prepare('SELECT from_char AS "from", to_char AS "to", ts FROM structure_owners WHERE structure_id=? ORDER BY ts, id').all(id) as never
   }
 
+  /** Vendor names seen in sale mails ("Vendor: <name> has sold"), to pick from when adding a vendor. */
+  vendorNames(): string[] {
+    return (this.db.prepare(`SELECT DISTINCT vendor FROM events WHERE kind='sale' AND vendor IS NOT NULL ORDER BY vendor COLLATE NOCASE`).all() as { vendor: string }[])
+      .map((r) => r.vendor)
+  }
+
   /** Hide a structure mail from the banner (it stays in the mail list, greyed). */
   dismissMail(eventId: number): void {
     this.db.prepare('UPDATE events SET dismissed_at=COALESCE(dismissed_at, ?) WHERE id=?').run(Math.floor(Date.now() / 1000), eventId)
@@ -290,11 +314,11 @@ export class Store {
   structureMails(days = 14): StructureMail[] {
     const since = Math.floor(Date.now() / 1000) - days * 86400
     const rows = this.db.prepare(`SELECT id, character, ts, kind, structure, planet, lots_left, structure_id, dismissed_at FROM events
-                                  WHERE kind IN ('factory_done','structure_maint','construction') AND ts >= ? ORDER BY ts DESC LIMIT 50`)
+                                  WHERE kind IN ('factory_done','structure_maint','construction','vendor_maint') AND ts >= ? ORDER BY ts DESC LIMIT 50`)
       .all(since) as Record<string, unknown>[]
     return rows.map((r) => ({
       id: r.id as number, character: r.character as string, ts: r.ts as number, kind: r.kind as StructureMail['kind'],
-      name: r.structure as string, planet: (r.planet as string | null) ?? null, lotsLeft: num(r.lots_left), structureId: num(r.structure_id),
+      name: (r.structure as string | null) ?? (r.kind === 'vendor_maint' ? 'A vendor' : ''), planet: (r.planet as string | null) ?? null, lotsLeft: num(r.lots_left), structureId: num(r.structure_id),
       dismissed: r.dismissed_at != null
     }))
   }
@@ -412,9 +436,10 @@ export class Store {
         id: r.id as number, character: r.character as string, typeId: num(r.type_id), typeName: (r.type_name as string | null) ?? null,
         name: r.name as string, kind: r.kind as StructureKind, planet: r.planet as string, notes: r.notes as string, lots: r.lots as number,
         maintPerHour: num(r.maint_per_hour), powerPerHour: num(r.power_per_hour), storage: num(r.storage), efficiency: num(r.efficiency),
+        x: num(r.x), y: num(r.y),
         state: ((r.state as StructureState | null) ?? 'packed'), stateSince: (r.state_since as number | null) ?? (r.created_ts as number),
         lastReading: rd
-          ? { ts: rd.ts as number, surplusMaint: num(rd.surplus_maint), surplusPower: num(rd.surplus_power), extractionRate: num(rd.extraction_rate), hopperPct: num(rd.hopper_pct) }
+          ? { ts: rd.ts as number, surplusMaint: num(rd.surplus_maint), surplusPower: num(rd.surplus_power), extractionRate: num(rd.extraction_rate), hopperPct: num(rd.hopper_pct), items: num(rd.items) }
           : null,
         resource: r.kind === 'harvester' ? this.currentResource(r.id as number) : null,
         otherNames: this.otherNames(r.id as number),
@@ -424,14 +449,15 @@ export class Store {
           maint: this.latestValue(r.id as number, 'surplus_maint'),
           power: this.latestValue(r.id as number, 'surplus_power'),
           rate: this.latestValue(r.id as number, 'extraction_rate'),
-          hopper: this.latestValue(r.id as number, 'hopper_pct')
+          hopper: this.latestValue(r.id as number, 'hopper_pct'),
+          items: this.latestValue(r.id as number, 'items')
         }
       }
     })
   }
 
   /** Newest non-empty value of one reading column, with when it was read. */
-  private latestValue(id: number, column: 'surplus_maint' | 'surplus_power' | 'extraction_rate' | 'hopper_pct'): { value: number; ts: number } | null {
+  private latestValue(id: number, column: 'surplus_maint' | 'surplus_power' | 'extraction_rate' | 'hopper_pct' | 'items'): { value: number; ts: number } | null {
     const r = this.db.prepare(`SELECT ${column} AS value, ts FROM structure_readings WHERE structure_id=? AND ${column} IS NOT NULL ORDER BY ts DESC, id DESC LIMIT 1`)
       .get(id) as { value: number; ts: number } | undefined
     return r ? { value: Number(r.value), ts: r.ts } : null
@@ -439,16 +465,16 @@ export class Store {
 
   /** Create or edit a structure. A new one starts in `s.state` (default Running). */
   saveStructure(s: StructureInput): number {
-    const vals = [s.character.trim(), s.typeId, s.name.trim(), s.kind, s.planet.trim(), s.notes, s.lots, s.maintPerHour, s.powerPerHour, s.storage, s.efficiency] as const
+    const vals = [s.character.trim(), s.typeId, s.name.trim(), s.kind, s.planet.trim(), s.notes, s.lots, s.maintPerHour, s.powerPerHour, s.storage, s.efficiency, s.x ?? null, s.y ?? null] as const
     if (s.id) {
       this.db.prepare(`UPDATE structures SET character=?, type_id=?, name=?, kind=?, planet=?, notes=?, lots=?, maint_per_hour=?, power_per_hour=?,
-                       storage=?, efficiency=? WHERE id=?`).run(...vals, s.id)
+                       storage=?, efficiency=?, x=?, y=? WHERE id=?`).run(...vals, s.id)
       return s.id
     }
     const now = Math.floor(Date.now() / 1000)
     return this.transaction(() => {
-      const id = Number(this.db.prepare(`INSERT INTO structures(character,type_id,name,kind,planet,notes,lots,maint_per_hour,power_per_hour,storage,efficiency,created_ts)
-                                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(...vals, now).lastInsertRowid)
+      const id = Number(this.db.prepare(`INSERT INTO structures(character,type_id,name,kind,planet,notes,lots,maint_per_hour,power_per_hour,storage,efficiency,x,y,created_ts)
+                                         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(...vals, now).lastInsertRowid)
       this.db.prepare('INSERT INTO structure_states(structure_id,state,ts) VALUES(?,?,?)').run(id, s.state ?? 'running', now)
       return id
     })
@@ -471,13 +497,13 @@ export class Store {
   }
 
   /** Save one check-in. Every field is optional; a reading with nothing in it is not saved. */
-  addReading(id: number, r: Omit<StructureReading, 'ts'>, ts = Math.floor(Date.now() / 1000)): void {
-    if ([r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct].every((v) => v == null)) return
-    this.db.prepare('INSERT INTO structure_readings(structure_id,ts,surplus_maint,surplus_power,extraction_rate,hopper_pct) VALUES(?,?,?,?,?,?)')
-      .run(id, ts, r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct)
+  addReading(id: number, r: Omit<StructureReading, 'ts' | 'items'> & { items?: number | null }, ts = Math.floor(Date.now() / 1000)): void {
+    if ([r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct, r.items].every((v) => v == null)) return
+    this.db.prepare('INSERT INTO structure_readings(structure_id,ts,surplus_maint,surplus_power,extraction_rate,hopper_pct,items) VALUES(?,?,?,?,?,?,?)')
+      .run(id, ts, r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct, r.items ?? null)
     // A pool with credits in it again means the "maintenance pool empty" notices up to now are dealt with.
     if (r.surplusMaint != null && r.surplusMaint > 0) {
-      this.db.prepare(`UPDATE events SET dismissed_at=? WHERE kind='structure_maint' AND structure_id=? AND dismissed_at IS NULL AND ts <= ?`)
+      this.db.prepare(`UPDATE events SET dismissed_at=? WHERE kind IN ('structure_maint','vendor_maint') AND structure_id=? AND dismissed_at IS NULL AND ts <= ?`)
         .run(Math.floor(Date.now() / 1000), id, ts)
     }
   }

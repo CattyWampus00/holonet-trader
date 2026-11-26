@@ -114,6 +114,7 @@ function registerIpc() {
   ipcMain.handle('customers:list', (_e, from: number, to: number, character?: string) => store.customerList(from, to, character || undefined))
   ipcMain.handle('vendorAlerts', () => store.vendorAlerts())
   ipcMain.handle('structureMails', () => store.structureMails())
+  ipcMain.handle('vendorNames', () => store.vendorNames())
   ipcMain.handle('dismissMail', (_e, id: number) => store.dismissMail(id))
   ipcMain.handle('linkMail', (_e, eventId: number, structureId: number) => store.linkMail(eventId, structureId))
   ipcMain.handle('removeStructureName', (_e, id: number, name: string) => store.removeStructureName(id, name))

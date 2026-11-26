@@ -5,25 +5,52 @@ import { cleanItemName } from './mailParser'
  * Numbers always come from the game's own windows (after modifiers); nothing here models modifiers.
  */
 
-export type StructureKind = 'harvester' | 'factory'
+export type StructureKind = 'harvester' | 'factory' | 'house' | 'vendor'
 export type StructureState = 'running' | 'idle' | 'packed'
 
 /** Lots each character may use in game. */
 export const MAX_LOTS = 10
 
 export const STATE_LABEL: Record<StructureState, string> = { running: 'Running', idle: 'Idle', packed: 'Packed up' }
-export const KIND_LABEL: Record<StructureKind, string> = { harvester: 'Harvester', factory: 'Factory' }
+export const KIND_LABEL: Record<StructureKind, string> = { harvester: 'Harvester', factory: 'Factory', house: 'House', vendor: 'Vendor' }
+export const KINDS: StructureKind[] = ['harvester', 'factory', 'house', 'vendor']
+
+/** Houses and vendors only pay maintenance: no power, no hopper (Step 8). */
+export function usesPower(kind: StructureKind): boolean {
+  return kind === 'harvester' || kind === 'factory'
+}
+
+/** The states a kind can be in: a house is placed or packed up; a vendor is just active. */
+export function statesFor(kind: StructureKind): StructureState[] {
+  if (kind === 'house') return ['running', 'packed']
+  if (kind === 'vendor') return ['running']
+  return ['running', 'idle', 'packed']
+}
+
+/** "Running" reads wrong for a house or vendor. */
+export function stateLabel(kind: StructureKind, state: StructureState): string {
+  if (state === 'running' && kind === 'house') return 'Placed'
+  if (state === 'running' && kind === 'vendor') return 'Active'
+  return STATE_LABEL[state]
+}
 
 /**
  * What a structure uses up in a given state. Confirmed in game by the owner (2026-11-26):
  * - a turned-off harvester uses maintenance but no power
  * - a factory uses power whenever it is placed, making items or not
  * - a packed-up structure (a deed) uses nothing and keeps its leftover surplus
+ * - houses and vendors use maintenance only
  */
 export function drains(kind: StructureKind, state: StructureState): { maintenance: boolean; power: boolean } {
   if (state === 'packed') return { maintenance: false, power: false }
+  if (!usesPower(kind)) return { maintenance: true, power: false }
   if (state === 'running') return { maintenance: true, power: true }
   return { maintenance: true, power: kind === 'factory' }
+}
+
+/** A house is nearly full at 95% of its item capacity (Structure Status: Items in Building / Maximum Storage Capacity). */
+export function nearlyFull(items: number | null | undefined, capacity: number | null | undefined): boolean {
+  return items != null && !!capacity && items >= capacity * 0.95
 }
 
 /** A placed structure takes lots; a packed-up one (back to a deed) does not. */
@@ -174,24 +201,40 @@ export interface MailClue {
   name: string
   /** Only the maintenance mail names a planet (lower-case, e.g. "tatooine"). */
   planet?: string
-  /** Only the factory mail says the kind for sure. */
+  /** The factory and vendor mails say the kind for sure. */
   kind?: StructureKind
+  /** The maintenance mails give the spot (x, y as the game shows them). The vendor mail has no real name, only this. */
+  x?: number
+  y?: number
 }
+
+/** How close (in metres) a mail's spot must be to a saved spot to count as the same structure. */
+export const SPOT_RADIUS = 10
 
 /**
  * Which of the app's structures a mail is about, or null when it can't be told.
  * Returning null is safe: the mail is still listed as a notice, it just changes nothing.
  */
 export function matchStructure(
-  list: { id: number; character: string; name: string; typeName: string | null; planet: string; kind: StructureKind; otherNames?: string[] }[],
+  list: {
+    id: number; character: string; name: string; typeName: string | null; planet: string; kind: StructureKind; otherNames?: string[]
+    x?: number | null; y?: number | null
+  }[],
   clue: MailClue
 ): number | null {
   const norm = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim().toLowerCase()
   const want = norm(clue.name)
-  // Within a pool: 1. the custom name the player typed, or another name saved by linking a mail; 2. the machine
-  // type's name, narrowed by planet when the mail gives one. Two or more still fitting means the mail can't say
-  // which one, so nothing is changed: 'unclear' stops the search instead of trying a wider pool.
+  const samePlanet = (s: (typeof list)[number]) => !clue.planet || norm(s.planet) === norm(clue.planet)
+  // Within a pool: 0. the saved spot (same planet, within SPOT_RADIUS); 1. the custom name the player typed, or
+  // another name saved by linking a mail; 2. the machine type's name, narrowed by planet when the mail gives one.
+  // Two or more still fitting means the mail can't say which one, so nothing is changed: 'unclear' stops the
+  // search instead of trying a wider pool.
   const pick = (pool: typeof list): number | 'unclear' | null => {
+    if (clue.x != null && clue.y != null) {
+      const near = pool.filter((s) => s.x != null && s.y != null && samePlanet(s) && Math.hypot(s.x - clue.x!, s.y - clue.y!) <= SPOT_RADIUS)
+      if (near.length) return near.length === 1 ? near[0]!.id : 'unclear'
+    }
+    if (!want) return null
     const byName = pool.filter((s) => norm(s.name) === want || (s.otherNames ?? []).some((n) => norm(n) === want))
     if (byName.length) return byName.length === 1 ? byName[0]!.id : 'unclear'
     const byType = pool.filter((s) => norm(s.typeName) === want && (!clue.planet || norm(s.planet) === norm(clue.planet)))
@@ -200,10 +243,18 @@ export function matchStructure(
   const ofKind = list.filter((s) => !clue.kind || s.kind === clue.kind)
   // The owner gets the mail, so the receiving character's structures come first. If none fit, the structure may have
   // been transferred in game without being recorded here (/transferStructure sends no mail), so try everyone's.
-  const own = pick(ofKind.filter((s) => norm(s.character) === norm(clue.character)))
+  const mine = ofKind.filter((s) => norm(s.character) === norm(clue.character))
+  const own = pick(mine)
   if (own !== null) return own === 'unclear' ? null : own
   const any = pick(ofKind)
-  return any === 'unclear' ? null : any
+  if (any !== null) return any === 'unclear' ? null : any
+  // The vendor mail has no name. A character's only vendor on that planet with no saved spot is the one
+  // (a vendor whose saved spot is elsewhere is a different vendor).
+  if (clue.kind === 'vendor' && clue.planet) {
+    const here = mine.filter((s) => samePlanet(s) && s.x == null)
+    if (here.length === 1) return here[0]!.id
+  }
+  return null
 }
 
 /**

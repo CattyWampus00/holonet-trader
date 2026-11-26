@@ -188,3 +188,29 @@ describe('transfers (Step 7)', () => {
     expect(lotsComparable('Other', 100, s)).toBe(true)
   })
 })
+
+describe('houses and vendors (Step 8)', () => {
+  it('only use maintenance', () => {
+    expect(drains('house', 'running')).toEqual({ maintenance: true, power: false })
+    expect(drains('vendor', 'running')).toEqual({ maintenance: true, power: false })
+    expect(drains('house', 'packed')).toEqual({ maintenance: false, power: false })
+  })
+
+  it('counts down a house pool like the game (39,460 at 6 an hour = 274 d 0 h)', () => {
+    const now = 2_000_000_000
+    const f = forecast({ kind: 'house', maintPerHour: 6, powerPerHour: null, storage: 850, history: [{ state: 'running', ts: now - 10 }],
+      latest: { maint: { value: 39460, ts: now }, power: null, rate: null, hopper: null } }, now)
+    expect(formatHours(f.maintenance.hoursLeft!)).toBe('274 d 0 h')
+    expect(f.power.paused).toBe(true)
+    expect(f.hopper).toBeNull()
+  })
+
+  it('matches by spot first, within a few metres and on the same planet', () => {
+    const list = [
+      { id: 1, character: 'Testchar', name: 'Shop A', typeName: null, planet: 'Talus', kind: 'vendor' as const, x: 100, y: 100 },
+      { id: 2, character: 'Testchar', name: 'Shop B', typeName: null, planet: 'Naboo', kind: 'vendor' as const, x: 100, y: 100 }
+    ]
+    expect(matchStructure(list, { character: 'Testchar', name: '', planet: 'talus', kind: 'vendor', x: 104, y: 97 })).toBe(1)
+    expect(matchStructure(list, { character: 'Testchar', name: '', planet: 'talus', kind: 'vendor', x: 150, y: 100 })).toBeNull() // too far, two vendors
+  })
+})

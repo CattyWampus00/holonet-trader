@@ -20,6 +20,7 @@ const api = {
   customerList: (from: number, to: number, character?: string) => call('customers:list', from, to, character),
   vendorAlerts: () => call('vendorAlerts'),
   structureMails: () => call('structureMails'),
+  vendorNames: () => call('vendorNames'),
   dismissMail: (id: number) => call('dismissMail', id),
   linkMail: (eventId: number, structureId: number) => call('linkMail', eventId, structureId),
   removeStructureName: (id: number, name: string) => call('removeStructureName', id, name),

@@ -208,11 +208,11 @@ describe('Store structures', () => {
     s.addReading(id, { surplusMaint: 63367, surplusPower: 110847, extractionRate: null, hopperPct: 0 }, 2_000_000_000)
     s.addReading(id, { surplusMaint: null, surplusPower: null, extractionRate: null, hopperPct: null }, 2_000_000_500) // empty: skipped
     s.addReading(id, { surplusMaint: 60000, surplusPower: null, extractionRate: 25, hopperPct: 12 }, 2_000_000_300)
-    expect(s.listStructures()[0]!.lastReading).toEqual({ ts: 2_000_000_300, surplusMaint: 60000, surplusPower: null, extractionRate: 25, hopperPct: 12 })
+    expect(s.listStructures()[0]!.lastReading).toEqual({ ts: 2_000_000_300, surplusMaint: 60000, surplusPower: null, extractionRate: 25, hopperPct: 12, items: null })
     // The countdowns use the newest value of each number, even when the newest reading left it empty.
     expect(s.listStructures()[0]!.latest).toEqual({
       maint: { value: 60000, ts: 2_000_000_300 }, power: { value: 110847, ts: 2_000_000_000 },
-      rate: { value: 25, ts: 2_000_000_300 }, hopper: { value: 12, ts: 2_000_000_300 }
+      rate: { value: 25, ts: 2_000_000_300 }, hopper: { value: 12, ts: 2_000_000_300 }, items: null
     })
     s.setHarvesterResource(id, { name: 'Fakeorite', type: 'Ore', concentration: null })
     s.emptyHopper(id, 100, 2_000_000_400) // emptying counts as a hopper reading of 0%
@@ -324,5 +324,59 @@ describe('Structure transfers (Step 7)', () => {
     // Mail now goes to the new owner and matches.
     s.insertEvent('Holder', { mailId: 'm1', timestamp: Math.floor(Date.now() / 1000) + 60, kind: 'structure_maint', structure: 'Ore Elite 1', planet: 'tatooine' })
     expect(s.structureMails()[0]!.structureId).toBe(id)
+  })
+})
+
+describe('Houses and vendors (Step 8)', () => {
+  const base = { typeId: null, notes: '', powerPerHour: null, storage: null, efficiency: null, state: 'running' as const }
+  const later = () => Math.floor(Date.now() / 1000) + 60
+  const vendorMail = (id: string, x: number, y: number, planet = 'Talus'): ParsedMail => ({ mailId: id, timestamp: later(), kind: 'vendor_maint', x, y, planet })
+
+  it('matches a vendor mail by its spot and records 0 maintenance', () => {
+    const s = new Store(':memory:')
+    s.saveStructure({ ...base, character: 'Testchar', name: 'Shop A', kind: 'vendor', planet: 'Talus', lots: 0, maintPerHour: 6, x: -1000, y: 500 })
+    const b = s.saveStructure({ ...base, character: 'Testchar', name: 'Shop B', kind: 'vendor', planet: 'Talus', lots: 0, maintPerHour: 6, x: 2000, y: 2000 })
+    s.insertEvent('Testchar', vendorMail('v1', 2003.5, 1998.2))
+    expect(s.structureMails()[0]).toMatchObject({ kind: 'vendor_maint', name: 'A vendor', structureId: b })
+    expect(s.listStructures().find((x) => x.id === b)!.latest.maint?.value).toBe(0)
+  })
+
+  it('uses the only vendor on the planet when no spot is saved, and links by spot, never by the placeholder name', () => {
+    const s = new Store(':memory:')
+    const a = s.saveStructure({ ...base, character: 'Testchar', name: 'Shop A', kind: 'vendor', planet: 'Talus', lots: 0, maintPerHour: 6 })
+    s.insertEvent('Testchar', vendorMail('v1', 10, 20))
+    expect(s.structureMails()[0]!.structureId).toBe(a)
+    // A second vendor on Talus: the next mail is unclear until one is linked.
+    const b = s.saveStructure({ ...base, character: 'Testchar', name: 'Shop B', kind: 'vendor', planet: 'Talus', lots: 0, maintPerHour: 6 })
+    s.insertEvent('Testchar', vendorMail('v2', 300, 400))
+    const m = s.structureMails().find((x) => x.structureId == null)!
+    s.linkMail(m.id, b)
+    const shopB = s.listStructures().find((x) => x.id === b)!
+    expect([shopB.x, shopB.y]).toEqual([300, 400])
+    expect(shopB.otherNames).toEqual([])
+    s.insertEvent('Testchar', vendorMail('v3', 301, 401)) // same spot: matches B now
+    expect(s.structureMails().find((x) => x.id !== m.id && x.structureId === b)).toBeTruthy()
+  })
+
+  it('a reading above 0 clears vendor notices; houses keep item counts', () => {
+    const s = new Store(':memory:')
+    const v = s.saveStructure({ ...base, character: 'Testchar', name: 'Shop A', kind: 'vendor', planet: 'Talus', lots: 0, maintPerHour: 6 })
+    s.insertEvent('Testchar', vendorMail('v1', 1, 2))
+    s.addReading(v, { surplusMaint: 45872, surplusPower: null, extractionRate: null, hopperPct: null }, later() + 10)
+    expect(s.structureMails()[0]!.dismissed).toBe(true)
+    const h = s.saveStructure({ ...base, character: 'Testchar', name: 'Test House', kind: 'house', planet: 'Talus', lots: 2, maintPerHour: 6, storage: 850 })
+    s.addReading(h, { surplusMaint: 39460, surplusPower: null, extractionRate: null, hopperPct: null, items: 846 })
+    expect(s.listStructures().find((x) => x.id === h)!.latest.items?.value).toBe(846)
+  })
+
+  it('fills in the spot of a mail stored before spots were kept', () => {
+    const s = new Store(':memory:')
+    s.insertEvent('Testchar', { mailId: 'old', timestamp: later(), kind: 'vendor_maint' }) // old parser: no spot
+    s.dismissMail(s.structureMails()[0]!.id)
+    s.insertEvent('Testchar', vendorMail('old', 5, 6)) // read again by the new parser
+    const v = s.saveStructure({ ...base, character: 'Testchar', name: 'Shop A', kind: 'vendor', planet: 'Talus', lots: 0, maintPerHour: 6 })
+    s.linkMail(s.structureMails()[0]!.id, v)
+    expect(s.listStructures()[0]!.x).toBe(5)
+    expect(s.structureMails()[0]!.dismissed).toBe(true) // the dismissal was kept
   })
 })

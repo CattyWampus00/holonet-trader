@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { HarvesterResource, MachineType, MachineTypeInput, Structure, StructureInput, StructureMail, StructureReading } from '@shared/types'
 import {
-  attention, type Countdown, forecast, formatHours, KIND_LABEL, lotsAfter, lotsByCharacter, lotsComparable, MAX_LOTS, parseOperateResource, STATE_LABEL,
-  type StructureKind, type StructureState, upkeepPerDay
+  attention, type Countdown, forecast, formatHours, KIND_LABEL, KINDS, lotsAfter, lotsByCharacter, lotsComparable, MAX_LOTS, nearlyFull, parseOperateResource,
+  stateLabel, statesFor, type StructureKind, type StructureState, upkeepPerDay, usesPower
 } from '@shared/structures'
 import { api, credits } from '../api'
 
 interface Props { version: number; characters: string[]; onChange: () => void }
 
-const STATES: StructureState[] = ['running', 'idle', 'packed']
 const blankType: MachineTypeInput = { name: '', kind: 'harvester', lots: 3, maintPerHour: null, powerPerHour: null, storage: null, efficiency: null }
 
 /** "3 h ago" style age of a unix time. */
@@ -37,6 +36,7 @@ export default function Structures({ version, characters, onChange }: Props) {
   const [transferring, setTransferring] = useState<Structure | null>(null)
   /** Shown in the structure form when it was opened from a Construction Complete mail. */
   const [editingHint, setEditingHint] = useState('')
+  const [vendorNames, setVendorNames] = useState<string[]>([])
 
   const transfer = async (s: Structure, to: string) => {
     if (!lotsOk(list, { character: to.trim(), lots: s.lots, state: s.state })) return false
@@ -50,6 +50,7 @@ export default function Structures({ version, characters, onChange }: Props) {
     api.machineTypes().then(setTypes)
     api.structures().then(setList)
     api.structureMails().then(setMails)
+    api.vendorNames().then(setVendorNames)
   }, [version])
   const now = useNow()
   const [mails, setMails] = useState<StructureMail[]>([])
@@ -73,8 +74,9 @@ export default function Structures({ version, characters, onChange }: Props) {
       <h2>Structures</h2>
       <div className="row">
         <button className="btn" onClick={() => setEditing(newStructure())}>Add structure</button>
-        <button className="btn ghost" onClick={() => setEditingType({ ...blankType })}>Add machine type</button>
-        <span className="muted">Copy the numbers from the game's Structure Status window (and the Operate panel for harvesters). They already include your modifiers.</span>
+        <button className="btn ghost" onClick={() => setEditing({ ...newStructure(), kind: 'vendor', lots: 0 })}>Add vendor</button>
+        <button className="btn ghost" onClick={() => setEditingType({ ...blankType })}>Add saved type</button>
+        <span className="muted">Copy the numbers from the game's Structure Status or Vendor Status window (and the Operate panel for harvesters). They already include your modifiers.</span>
       </div>
 
       {notice && (
@@ -138,7 +140,7 @@ export default function Structures({ version, characters, onChange }: Props) {
                   <td>
                     {s.name}
                     <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                      {s.typeName ?? KIND_LABEL[s.kind]} · {s.lots} lot{s.lots === 1 ? '' : 's'}
+                      {s.typeName ?? KIND_LABEL[s.kind]}{s.kind !== 'vendor' && ` · ${s.lots} lot${s.lots === 1 ? '' : 's'}`}
                     </div>
                     {s.otherNames.map((n) => (
                       <div key={n} className="muted" style={{ fontSize: 12, marginTop: 2 }}>
@@ -163,9 +165,13 @@ export default function Structures({ version, characters, onChange }: Props) {
                   </td>
                   <td>{s.planet}</td>
                   <td>
-                    <select value={s.state} onChange={(e) => changeState(s, e.target.value as StructureState)}>
-                      {STATES.map((st) => <option key={st} value={st}>{STATE_LABEL[st]}</option>)}
-                    </select>
+                    {statesFor(s.kind).length > 1
+                      ? (
+                        <select value={s.state} onChange={(e) => changeState(s, e.target.value as StructureState)}>
+                          {statesFor(s.kind).map((st) => <option key={st} value={st}>{stateLabel(s.kind, st)}</option>)}
+                        </select>
+                      )
+                      : stateLabel(s.kind, s.state)}
                     <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>since {ago(s.stateSince)}</div>
                   </td>
                   <td>
@@ -186,14 +192,14 @@ export default function Structures({ version, characters, onChange }: Props) {
             })}
             {!list.length && (
               <tr><td colSpan={6} className="muted">
-                No structures yet. Save a machine type first (its fixed stats), then add each harvester or factory you have placed.
+                No structures yet. Save a type first (its fixed stats), then add each harvester, factory, house or vendor you have.
               </td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      <h3>Machine types</h3>
+      <h3>Saved types</h3>
       <div className="panel scroll">
         <p className="muted" style={{ marginTop: 0 }}>
           Your saved fixed stats. Pick one when adding a structure and its numbers fill in. Editing a type does not change structures already added.
@@ -213,7 +219,7 @@ export default function Structures({ version, characters, onChange }: Props) {
                 <td style={{ textAlign: 'right' }}><button className="btn ghost" onClick={() => setEditingType({ ...t })}>Edit</button></td>
               </tr>
             ))}
-            {!types.length && <tr><td colSpan={8} className="muted">No machine types yet.</td></tr>}
+            {!types.length && <tr><td colSpan={8} className="muted">No saved types yet.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -239,6 +245,7 @@ export default function Structures({ version, characters, onChange }: Props) {
           structure={editing}
           types={types}
           characters={charOptions}
+          vendorNames={vendorNames.filter((n) => !list.some((x) => x.kind === 'vendor' && x.name.toLowerCase() === n.toLowerCase()))}
           takenNames={new Set(list.filter((x) => x.id !== editing.id).map((x) => x.name.replace(/\s+/g, ' ').trim().toLowerCase()))}
           hint={editingHint}
           onClose={() => { setEditing(null); setEditingHint('') }}
@@ -315,6 +322,11 @@ function MailPanel({ mails, list, used, onAdd, onDismiss, onLink, onTransfer }: 
         ? `${nameOf(m)} has an empty maintenance pool. The game is taking upkeep from your bank.`
         : `"${m.name}"${m.planet ? ` on ${m.planet}` : ''} has an empty maintenance pool (bank is paying). No structure in the app matched it.`
     }
+    if (m.kind === 'vendor_maint') {
+      return m.structureId != null
+        ? `Vendor ${nameOf(m)} has an empty maintenance pool. It is deactivated, and it and its items can be destroyed: add maintenance now.`
+        : `A vendor${m.planet ? ` on ${m.planet}` : ''} has an empty maintenance pool and is deactivated; it and its items can be destroyed. No vendor in the app matched it (the mail gives only its spot).`
+    }
     let t = `Construction of ${m.name} complete. The game says ${m.lotsLeft} lot${m.lotsLeft === 1 ? '' : 's'} left.`
     if (newestBuild.get(m.character) === m.id && m.lotsLeft != null && lotsComparable(m.character, m.ts, list)) {
       const appLeft = MAX_LOTS - (used.get(m.character) ?? 0)
@@ -332,7 +344,7 @@ function MailPanel({ mails, list, used, onAdd, onDismiss, onLink, onTransfer }: 
               <tr key={m.id} style={m.dismissed ? { opacity: 0.55 } : undefined}>
                 <td className="muted" style={{ whiteSpace: 'nowrap' }}>{ago(m.ts)}</td>
                 <td>{m.character}</td>
-                <td style={m.kind === 'structure_maint' && !m.dismissed ? { color: 'var(--bad)' } : undefined}>
+                <td style={(m.kind === 'structure_maint' || m.kind === 'vendor_maint') && !m.dismissed ? { color: 'var(--bad)' } : undefined}>
                   {text(m)}{m.dismissed && <span className="muted"> (dismissed)</span>}
                   {movedTo(m) && (
                     <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
@@ -345,7 +357,7 @@ function MailPanel({ mails, list, used, onAdd, onDismiss, onLink, onTransfer }: 
                   {m.kind !== 'construction' && m.structureId == null && list.length > 0 && (
                     <select value="" title="Which structure is this mail about? Its name is saved so later mails match." onChange={(e) => e.target.value && onLink(m, Number(e.target.value))}>
                       <option value="">Link to…</option>
-                      {list.filter((s) => m.kind !== 'factory_done' || s.kind === 'factory').map((s) => (
+                      {list.filter((s) => (m.kind !== 'factory_done' || s.kind === 'factory') && (m.kind === 'vendor_maint') === (s.kind === 'vendor')).map((s) => (
                         <option key={s.id} value={s.id}>{s.name} ({s.character})</option>
                       ))}
                     </select>
@@ -422,6 +434,12 @@ function Countdowns({ s, now }: { s: Structure; now: number }) {
       {line('Maint.', f.maintenance)}
       {line('Power', f.power)}
       {line('Hopper full', f.hopper)}
+      {s.kind === 'house' && s.latest.items && (
+        <div style={{ fontSize: 13, ...(nearlyFull(s.latest.items.value, s.storage) ? { color: 'var(--warn)' } : {}) }}>
+          Items: {credits(s.latest.items.value)}{s.storage ? ` / ${credits(s.storage)}` : ''}{nearlyFull(s.latest.items.value, s.storage) ? ' (nearly full)' : ''}
+        </div>
+      )}
+      {s.kind === 'vendor' && s.latest.items && <div style={{ fontSize: 13 }}>Items for sale: {credits(s.latest.items.value)}</div>}
     </>
   )
 }
@@ -440,10 +458,39 @@ function NumField({ label, value, onChange, step }: { label: string; value: numb
 function KindSelect({ value, onChange }: { value: StructureKind; onChange: (k: StructureKind) => void }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value as StructureKind)} style={{ width: '100%' }}>
-      <option value="harvester">Harvester</option>
-      <option value="factory">Factory</option>
+      {KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
     </select>
   )
+}
+
+/**
+ * The fixed stats that apply to a kind: power only for harvesters and factories, storage for harvesters (hopper
+ * units) and houses (items), efficiency for factories. Lots are hidden for vendors (they use none).
+ */
+function StatFields<T extends { kind: StructureKind; lots: number; maintPerHour: number | null; powerPerHour: number | null; storage: number | null; efficiency: number | null }>(
+  { v, set, fromDeed }: { v: T; set: (next: T) => void; fromDeed?: boolean }
+) {
+  return (
+    <>
+      {v.kind !== 'vendor' && <NumField label={v.kind === 'house' ? 'Lots used (1 to 5)' : 'Lots used'} value={v.lots} step="1" onChange={(n) => set({ ...v, lots: Math.floor(n ?? 0) })} />}
+      <NumField label={`Maintenance rate per hour (${v.kind === 'vendor' ? 'Vendor Status' : 'Structure Status, first number'})`} value={v.maintPerHour} onChange={(n) => set({ ...v, maintPerHour: n })} />
+      {usesPower(v.kind) && <NumField label="Power consumption per hour (Structure Status)" value={v.powerPerHour} onChange={(n) => set({ ...v, powerPerHour: n })} />}
+      {v.kind === 'harvester' && <NumField label={fromDeed ? 'Storage capacity (from the deed)' : 'Storage capacity'} value={v.storage} step="1" onChange={(n) => set({ ...v, storage: n })} />}
+      {v.kind === 'house' && <NumField label="Maximum Storage Capacity (items, Structure Status)" value={v.storage} step="1" onChange={(n) => set({ ...v, storage: n })} />}
+      {v.kind === 'factory' && <NumField label="Factory production efficiency" value={v.efficiency} onChange={(n) => set({ ...v, efficiency: n })} />}
+    </>
+  )
+}
+
+/** Switching kind: vendors use no lots, and stats that don't apply to the new kind are cleared. */
+function withKind<T extends { kind: StructureKind; lots: number; powerPerHour: number | null; storage: number | null; efficiency: number | null }>(v: T, kind: StructureKind): T {
+  return {
+    ...v, kind,
+    lots: kind === 'vendor' ? 0 : v.kind === 'vendor' ? 1 : v.lots,
+    powerPerHour: usesPower(kind) ? v.powerPerHour : null,
+    storage: kind === 'harvester' || kind === 'house' ? (kind === v.kind ? v.storage : null) : null,
+    efficiency: kind === 'factory' ? v.efficiency : null
+  }
 }
 
 function TypeModal({ type, onClose, onSave, onDelete }: { type: MachineTypeInput; onClose: () => void; onSave: (t: MachineTypeInput) => void; onDelete?: () => void }) {
@@ -451,19 +498,14 @@ function TypeModal({ type, onClose, onSave, onDelete }: { type: MachineTypeInput
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{type.id ? 'Edit machine type' : 'Add machine type'}</h2>
+        <h2>{type.id ? 'Edit saved type' : 'Add saved type'}</h2>
         <label>Name (your choice)</label>
         <input value={t.name} onChange={(e) => setT({ ...t, name: e.target.value })} placeholder="My Elite Ore Harvester" autoFocus />
         <label>Kind</label>
-        <KindSelect value={t.kind} onChange={(kind) => setT({ ...t, kind })} />
-        <NumField label="Lots used" value={t.lots} step="1" onChange={(v) => setT({ ...t, lots: Math.floor(v ?? 0) })} />
-        <NumField label="Maintenance rate per hour (Structure Status, first number)" value={t.maintPerHour} onChange={(v) => setT({ ...t, maintPerHour: v })} />
-        <NumField label="Power consumption per hour (Structure Status)" value={t.powerPerHour} onChange={(v) => setT({ ...t, powerPerHour: v })} />
-        {t.kind === 'harvester'
-          ? <NumField label="Storage capacity (from the deed)" value={t.storage} step="1" onChange={(v) => setT({ ...t, storage: v })} />
-          : <NumField label="Factory production efficiency" value={t.efficiency} onChange={(v) => setT({ ...t, efficiency: v })} />}
+        <KindSelect value={t.kind} onChange={(kind) => setT(withKind(t, kind))} />
+        <StatFields v={t} set={setT} fromDeed />
         <div className="row" style={{ marginTop: 16, justifyContent: 'space-between' }}>
-          <span>{onDelete && <button className="btn danger" onClick={() => confirm('Delete this machine type?\n\nStructures made from it keep their own numbers.') && onDelete()}>Delete</button>}</span>
+          <span>{onDelete && <button className="btn danger" onClick={() => confirm('Delete this saved type?\n\nStructures made from it keep their own numbers.') && onDelete()}>Delete</button>}</span>
           <span><button className="btn ghost" onClick={onClose}>Cancel</button>{' '}<button className="btn" disabled={!t.name.trim()} onClick={() => onSave(t)}>Save</button></span>
         </div>
       </div>
@@ -471,8 +513,10 @@ function TypeModal({ type, onClose, onSave, onDelete }: { type: MachineTypeInput
   )
 }
 
-function StructureModal({ structure, types, characters, takenNames, hint, onClose, onSave, onSaveType, onDelete }: {
+function StructureModal({ structure, types, characters, takenNames, hint, vendorNames, onClose, onSave, onSaveType, onDelete }: {
   structure: StructureInput; types: MachineType[]; characters: string[]
+  /** Vendor names from sale mails, offered when adding a vendor. */
+  vendorNames: string[]
   /** Lower-case names of the other structures (a duplicate name can't be matched from mail). */
   takenNames: Set<string>
   hint?: string
@@ -490,13 +534,17 @@ function StructureModal({ structure, types, characters, takenNames, hint, onClos
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
         <h2>{structure.id ? 'Edit structure' : 'Add structure'}</h2>
-        <label>Machine type</label>
+        <label>Kind</label>
+        <KindSelect value={s.kind} onChange={(kind) => setS({ ...withKind(s, kind), typeId: null, state: statesFor(kind).includes(s.state ?? 'running') ? s.state : 'running' })} />
+        <label>Saved type</label>
         <select value={s.typeId ?? ''} onChange={(e) => pickType(e.target.value ? Number(e.target.value) : null)} style={{ width: '100%' }}>
           <option value="">None (enter the numbers below)</option>
-          {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {types.filter((t) => t.kind === s.kind).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
         <label>Name (the same name you give it in game)</label>
-        <input value={s.name} onChange={(e) => setS({ ...s, name: e.target.value })} placeholder="Ore Elite 1" />
+        <input value={s.name} list={s.kind === 'vendor' ? 'vendor-names' : undefined} onChange={(e) => setS({ ...s, name: e.target.value })}
+          placeholder={s.kind === 'vendor' ? 'Pick a vendor from your sales, or type' : s.kind === 'house' ? 'Research & Development' : 'Ore Elite 1'} />
+        {s.kind === 'vendor' && <datalist id="vendor-names">{vendorNames.map((n) => <option key={n} value={n} />)}</datalist>}
         {takenNames.has(s.name.replace(/\s+/g, ' ').trim().toLowerCase()) && (
           <div className="muted" style={{ fontSize: 12, color: 'var(--warn)' }}>Another structure has this name, so mail can't tell them apart. A unique name (in game too) fixes that.</div>
         )}
@@ -507,22 +555,24 @@ function StructureModal({ structure, types, characters, takenNames, hint, onClos
         <datalist id="structure-characters">{characters.map((c) => <option key={c} value={c} />)}</datalist>
         <label>Planet</label>
         <input value={s.planet} onChange={(e) => setS({ ...s, planet: e.target.value })} />
-        {!structure.id && (
+        <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+          <span style={{ flex: 1 }}><NumField label="Spot x (optional)" value={s.x ?? null} onChange={(v) => setS({ ...s, x: v })} /></span>
+          <span style={{ flex: 1 }}><NumField label="Spot y (optional)" value={s.y ?? null} onChange={(v) => setS({ ...s, y: v })} /></span>
+        </div>
+        <div className="muted" style={{ fontSize: 12 }}>
+          {s.kind === 'vendor'
+            ? 'The vendor maintenance mail has no vendor name, only its spot. Fill these in (or use Link to… on a mail) when you have more than one vendor on a planet.'
+            : 'Structure Status shows "PLANET x z y": enter the first and last numbers. Helps match maintenance mails.'}
+        </div>
+        {!structure.id && statesFor(s.kind).length > 1 && (
           <>
             <label>Starts as</label>
             <select value={s.state ?? 'running'} onChange={(e) => setS({ ...s, state: e.target.value as StructureState })} style={{ width: '100%' }}>
-              {STATES.map((st) => <option key={st} value={st}>{STATE_LABEL[st]}</option>)}
+              {statesFor(s.kind).map((st) => <option key={st} value={st}>{stateLabel(s.kind, st)}</option>)}
             </select>
           </>
         )}
-        <label>Kind</label>
-        <KindSelect value={s.kind} onChange={(kind) => setS({ ...s, kind })} />
-        <NumField label="Lots used" value={s.lots} step="1" onChange={(v) => setS({ ...s, lots: Math.floor(v ?? 0) })} />
-        <NumField label="Maintenance rate per hour" value={s.maintPerHour} onChange={(v) => setS({ ...s, maintPerHour: v })} />
-        <NumField label="Power consumption per hour" value={s.powerPerHour} onChange={(v) => setS({ ...s, powerPerHour: v })} />
-        {s.kind === 'harvester'
-          ? <NumField label="Storage capacity" value={s.storage} step="1" onChange={(v) => setS({ ...s, storage: v })} />
-          : <NumField label="Factory production efficiency" value={s.efficiency} onChange={(v) => setS({ ...s, efficiency: v })} />}
+        <StatFields v={s} set={setS} />
         <label>Notes</label>
         <input value={s.notes} onChange={(e) => setS({ ...s, notes: e.target.value })} />
         <div className="row" style={{ marginTop: 16, justifyContent: 'space-between' }}>
@@ -531,7 +581,7 @@ function StructureModal({ structure, types, characters, takenNames, hint, onClos
             <button className="btn ghost" disabled={!s.name.trim() || savedType} onClick={() => {
               onSaveType({ name: s.name.trim(), kind: s.kind, lots: s.lots, maintPerHour: s.maintPerHour, powerPerHour: s.powerPerHour, storage: s.storage, efficiency: s.efficiency })
               setSavedType(true)
-            }}>{savedType ? 'Saved as type' : 'Save as machine type'}</button>
+            }}>{savedType ? 'Saved as type' : 'Save as type'}</button>
           </span>
           <span><button className="btn ghost" onClick={onClose}>Cancel</button>{' '}<button className="btn" disabled={!s.name.trim() || !s.character.trim()} onClick={() => onSave(s)}>Save</button></span>
         </div>
@@ -654,15 +704,17 @@ function EmptyModal({ structure, onClose, onSave }: { structure: Structure; onCl
 }
 
 function ReadingModal({ structure, onClose, onSave }: { structure: Structure; onClose: () => void; onSave: (r: Omit<StructureReading, 'ts'>) => void }) {
-  const [r, setR] = useState<Omit<StructureReading, 'ts'>>({ surplusMaint: null, surplusPower: null, extractionRate: null, hopperPct: null })
-  const empty = [r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct].every((v) => v == null)
+  const [r, setR] = useState<Omit<StructureReading, 'ts'>>({ surplusMaint: null, surplusPower: null, extractionRate: null, hopperPct: null, items: null })
+  const empty = [r.surplusMaint, r.surplusPower, r.extractionRate, r.hopperPct, r.items].every((v) => v == null)
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Reading: {structure.name}</h2>
         <p className="muted" style={{ margin: 0 }}>Fill in what you can see now. Leave a box empty if you didn't check it.</p>
-        <NumField label="Maintenance Pool (Structure Status)" value={r.surplusMaint} onChange={(v) => setR({ ...r, surplusMaint: v })} />
-        <NumField label="Power Reserves (Structure Status)" value={r.surplusPower} onChange={(v) => setR({ ...r, surplusPower: v })} />
+        <NumField label={`Maintenance Pool (${structure.kind === 'vendor' ? 'Vendor' : 'Structure'} Status)`} value={r.surplusMaint} onChange={(v) => setR({ ...r, surplusMaint: v })} />
+        {usesPower(structure.kind) && <NumField label="Power Reserves (Structure Status)" value={r.surplusPower} onChange={(v) => setR({ ...r, surplusPower: v })} />}
+        {structure.kind === 'house' && <NumField label="Number of Items in Building (Structure Status)" value={r.items} step="1" onChange={(v) => setR({ ...r, items: v == null ? null : Math.floor(v) })} />}
+        {structure.kind === 'vendor' && <NumField label="Number of Items For Sale (Vendor Status)" value={r.items} step="1" onChange={(v) => setR({ ...r, items: v == null ? null : Math.floor(v) })} />}
         {structure.kind === 'harvester' && (
           <>
             <NumField label="Actual Rate, KG/H (Operate panel, while running)" value={r.extractionRate} onChange={(v) => setR({ ...r, extractionRate: v })} />

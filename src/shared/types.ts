@@ -33,6 +33,9 @@ export interface ParsedMail {
   structure?: string
   /** "Construction Complete": lots the character has left, per the game. */
   lotsLeft?: number
+  /** Maintenance mails: the structure's spot as the game shows it. */
+  x?: number
+  y?: number
 }
 
 /** A structure mail, for the notices on the Structures tab and Dashboard. */
@@ -40,8 +43,8 @@ export interface StructureMail {
   id: number
   character: string
   ts: number
-  kind: 'factory_done' | 'structure_maint' | 'construction'
-  /** The name as the mail shows it. */
+  kind: 'factory_done' | 'structure_maint' | 'construction' | 'vendor_maint'
+  /** The name as the mail shows it ("A vendor" for the vendor mail, which has no real name). */
   name: string
   planet: string | null
   lotsLeft: number | null
@@ -174,6 +177,8 @@ export interface StructureReading {
   surplusPower: number | null
   extractionRate: number | null
   hopperPct: number | null
+  /** Houses: Number of Items in Building. Vendors: Number of Items For Sale. */
+  items: number | null
 }
 
 /** One period of a harvester extracting one resource. `toTs` is null while it is the current resource. */
@@ -203,6 +208,9 @@ export interface Structure {
   powerPerHour: number | null
   storage: number | null
   efficiency: number | null
+  /** Where it stands (x, y as the game shows them), used to match maintenance mails. Optional. */
+  x: number | null
+  y: number | null
   state: import('./structures').StructureState
   stateSince: number
   lastReading: StructureReading | null
@@ -220,10 +228,14 @@ export interface Structure {
     power: import('./structures').Stamped | null
     rate: import('./structures').Stamped | null
     hopper: import('./structures').Stamped | null
+    items: import('./structures').Stamped | null
   }
 }
-export type StructureInput = Omit<Structure, 'id' | 'typeName' | 'state' | 'stateSince' | 'lastReading' | 'resource' | 'otherNames' | 'transfers' | 'history' | 'latest'> & {
+export type StructureInput = Omit<Structure, 'id' | 'typeName' | 'state' | 'stateSince' | 'lastReading' | 'resource' | 'otherNames' | 'transfers' | 'history' | 'latest' | 'x' | 'y'> & {
   id?: number
+  /** Optional spot (x, y as the game shows them). */
+  x?: number | null
+  y?: number | null
   /** Only used when creating: the state it starts in. */
   state?: import('./structures').StructureState
 }

@@ -29,11 +29,16 @@ export default function Dashboard({ version, items, settings, characters }: { ve
   }, [version])
   const [mails, setMails] = useState<StructureMail[]>([])
   // Empty-pool mails from the last 7 days that were not dismissed (by hand, or by a later maintenance reading above 0).
-  const bankPaying = mails.filter((m) => {
-    if (m.kind !== 'structure_maint' || m.dismissed || Date.now() / 1000 - m.ts > 7 * 86400) return false
+  const emptyPool = mails.filter((m) => {
+    if ((m.kind !== 'structure_maint' && m.kind !== 'vendor_maint') || m.dismissed || Date.now() / 1000 - m.ts > 7 * 86400) return false
     const s = structures.find((x) => x.id === m.structureId)
     return !s?.latest.maint || s.latest.maint.ts <= m.ts || s.latest.maint.value === 0
   })
+  const bankPaying = emptyPool.filter((m) => m.kind === 'structure_maint')
+  // A vendor with an empty pool is switched off and can be destroyed with its items, so it gets its own, stronger banner.
+  const vendorsOff = emptyPool.filter((m) => m.kind === 'vendor_maint')
+  const nameOf = (m: StructureMail) => structures.find((x) => x.id === m.structureId)?.name ?? m.name
+  const dismiss = async (list: StructureMail[]) => { for (const m of list) await api.dismissMail(m.id); setMails(await api.structureMails()) }
 
   const low = items.filter((i) => needsRestock(i, settings.lowThreshold))
   const t = s?.totals
@@ -55,19 +60,31 @@ export default function Dashboard({ version, items, settings, characters }: { ve
       {bankPaying.length > 0 && (
         <div className="banner bad row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 12 }}>
           <span>
-            <b>Maintenance pool empty:</b> {[...new Set(bankPaying.map((m) => `${m.name} (${m.character})`))].join(', ')}. The game is taking upkeep from your bank.
+            <b>Maintenance pool empty:</b> {[...new Set(bankPaying.map((m) => `${nameOf(m)} (${m.character})`))].join(', ')}. The game is taking upkeep from your bank.
             {bankPaying.some((m) => m.structureId == null) && ' Not matched to a structure in the app: add it or use Link to… on the Structures tab.'}
             {' '}Entering a maintenance reading clears this.
           </span>
-          <button className="btn ghost" title="Hide this notice"
-            onClick={async () => { for (const m of bankPaying) await api.dismissMail(m.id); setMails(await api.structureMails()) }}>Dismiss</button>
+          <button className="btn ghost" title="Hide this notice" onClick={() => dismiss(bankPaying)}>Dismiss</button>
         </div>
       )}
-      {alerts.length > 0 && Date.now() / 1000 - alerts[0]!.ts < 7 * 86400 && (
-        <div className="banner">
-          Vendor notice: {alerts[0]!.kind === 'vendor_maint' ? 'a vendor has an empty maintenance pool' : `${alerts[0]!.vendor} is empty`} ({alerts[0]!.character}).
+      {vendorsOff.length > 0 && (
+        <div className="banner bad row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 12 }}>
+          <span>
+            <b>Vendor switched off:</b>{' '}
+            {[...new Set(vendorsOff.map((m) => `${m.structureId != null ? nameOf(m) : `a vendor${m.planet ? ` on ${m.planet}` : ''}`} (${m.character})`))].join(', ')}.
+            {' '}Its maintenance pool is empty, so it can't list or take items, and it and its items can be destroyed. Add maintenance now.
+            {vendorsOff.some((m) => m.structureId == null) && ' The mail gives only its spot: use Link to… on the Structures tab to say which vendor it is.'}
+          </span>
+          <button className="btn ghost" title="Hide this notice" onClick={() => dismiss(vendorsOff)}>Dismiss</button>
         </div>
       )}
+      {(() => {
+        // "Vendor is empty" stays here; empty maintenance pools are shown above.
+        const empty = alerts.find((a) => a.kind === 'vendor_empty')
+        return empty && Date.now() / 1000 - empty.ts < 7 * 86400 && (
+          <div className="banner">Vendor notice: {empty.vendor} is empty ({empty.character}).</div>
+        )
+      })()}
       <div className="filters">
         <DateRangeBar value={range} onChange={(v) => { setRange(v); saveRange('dashboard', v) }} />
         <CharacterSelect characters={characters} value={character} onChange={(c) => { setCharacter(c); saveCharacter(c) }} />
