@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } from '
 import { autoUpdater } from 'electron-updater'
 import { watch, type FSWatcher } from 'node:fs'
 import { join } from 'node:path'
-import { DEFAULT_LOW_THRESHOLD, getStockStatus } from '../shared/stock'
+import { DEFAULT_LOW_THRESHOLD, getStockStatus, needsRestock } from '../shared/stock'
 import { DEFAULT_THEME, isThemeId, type ThemeId } from '../shared/themes'
 import type { DetectedLocation } from '../shared/types'
 import { Store } from './db'
@@ -49,9 +49,9 @@ function runScan() {
   const r = scan(store, loc)
   for (const id of r.lowItemIds) {
     const item = store.getItem(id)
-    if (!item) continue
+    if (!item || !needsRestock(item, globalThreshold())) continue
     const status = getStockStatus(item.onHand, item.lowThreshold, globalThreshold())
-    if (status !== 'ok' && Notification.isSupported()) {
+    if (Notification.isSupported()) {
       new Notification({
         title: status === 'out' ? 'Out of stock' : 'Low stock',
         body: `${item.name}: ${item.onHand} left`
@@ -117,7 +117,11 @@ function registerIpc() {
   ipcMain.handle('inventory:save', (_e, item) => store.saveItem(item))
   ipcMain.handle('inventory:delete', (_e, id: number) => store.deleteItem(id))
   ipcMain.handle('inventory:adjust', (_e, id: number, delta: number, reason: string) => store.adjustStock(id, delta, reason))
+  ipcMain.handle('inventory:archive', (_e, id: number, archived: boolean) => store.setArchived(id, archived === true))
   ipcMain.handle('unmatched:list', () => store.unmatched())
+  ipcMain.handle('unmatched:ignore', (_e, key: string) => store.ignoreName(key))
+  ipcMain.handle('unmatched:unignore', (_e, key: string) => store.unignoreName(key))
+  ipcMain.handle('unmatched:ignored', () => store.ignoredNames())
   ipcMain.handle('unmatched:link', (_e, key: string, itemId: number) => store.linkAlias(key, itemId))
   ipcMain.handle('aliases:list', (_e, itemId?: number) => store.linkedNames(itemId))
   ipcMain.handle('aliases:unlink', (_e, key: string) => store.unlinkAlias(key))

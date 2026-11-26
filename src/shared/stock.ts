@@ -17,6 +17,11 @@ export const DEFAULT_LOW_THRESHOLD = 5
  * @param itemThreshold this item's own warning level, or null if not set
  * @param globalDefault the app-wide default warning level
  */
+/** Should this item show in "Restock needed", the Inventory badge and low-stock notifications? Archived items never do. */
+export function needsRestock(item: { onHand: number; lowThreshold: number | null; archived: boolean }, globalDefault: number): boolean {
+  return !item.archived && getStockStatus(item.onHand, item.lowThreshold, globalDefault) !== 'ok'
+}
+
 export function getStockStatus(onHand: number, itemThreshold: number | null, globalDefault: number): StockStatus {
   if (onHand <= 0) return 'out'
   const warnAt = itemThreshold ?? globalDefault

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_LOW_THRESHOLD, getStockStatus } from '../src/shared/stock'
+import { DEFAULT_LOW_THRESHOLD, getStockStatus, needsRestock } from '../src/shared/stock'
 
 describe('getStockStatus', () => {
   it('is out when nothing is left, even when the warning level is set (the owner\'s 0 on hand / warn at 5 case)', () => {
@@ -32,5 +32,14 @@ describe('getStockStatus', () => {
 
   it('has a sensible built-in default', () => {
     expect(DEFAULT_LOW_THRESHOLD).toBe(5)
+  })
+})
+
+describe('needsRestock', () => {
+  it('flags low and out items, but never archived ones', () => {
+    expect(needsRestock({ onHand: 0, lowThreshold: null, archived: false }, 5)).toBe(true)
+    expect(needsRestock({ onHand: 3, lowThreshold: null, archived: false }, 5)).toBe(true)
+    expect(needsRestock({ onHand: 9, lowThreshold: null, archived: false }, 5)).toBe(false)
+    expect(needsRestock({ onHand: 0, lowThreshold: null, archived: true }, 5)).toBe(false) // despawned resource
   })
 })

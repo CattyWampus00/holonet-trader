@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { cleanItemName } from '@shared/mailParser'
 import type { CharacterInfo, InventoryItem } from '@shared/types'
-import { getStockStatus } from '@shared/stock'
+import { needsRestock } from '@shared/stock'
 import { api, credits, type Settings, type Summary, type VendorAlert } from '../api'
 import CharacterSelect from '../components/CharacterSelect'
 import DateRangeBar from '../components/DateRangeBar'
@@ -21,11 +21,11 @@ export default function Dashboard({ version, items, settings, characters }: { ve
     api.vendorAlerts().then(setAlerts)
   }, [range, character, characters, version])
 
-  const low = items.filter((i) => getStockStatus(i.onHand, i.lowThreshold, settings.lowThreshold) !== 'ok')
+  const low = items.filter((i) => needsRestock(i, settings.lowThreshold))
   const t = s?.totals
   const net = t && s ? t.revenue - s.spent.spent : 0
-  // Plain total: units on hand times the cost each that was entered. Items with no cost entered add 0.
-  const inventoryValue = items.reduce((sum, i) => sum + i.onHand * i.costEach, 0)
+  // Plain total: units on hand times the cost each that was entered. No cost entered adds 0; archived items are left out.
+  const inventoryValue = items.reduce((sum, i) => (i.archived ? sum : sum + i.onHand * i.costEach), 0)
 
   return (
     <>

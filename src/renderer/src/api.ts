@@ -12,6 +12,7 @@ export interface Summary {
   byCharacter: Row[]
 }
 export interface Unmatched { key: string; name: string; sales: number; units: number }
+export interface IgnoredName { key: string; name: string; sales: number }
 export interface LinkedName { key: string; name: string; sales: number; itemId: number; itemName: string }
 export interface VendorAlert { id: number; character: string; ts: number; kind: 'vendor_empty' | 'vendor_maint'; vendor: string | null }
 export interface ItemInput { id?: number; name: string; onHand: number; costEach: number; lowThreshold: number | null; notes: string }
@@ -37,7 +38,12 @@ export interface Api {
   saveItem(i: ItemInput): Promise<number>
   deleteItem(id: number): Promise<void>
   adjustStock(id: number, delta: number, reason: string): Promise<void>
+  /** Archive (retire) an item, or restore it. */
+  setArchived(id: number, archived: boolean): Promise<void>
   unmatched(): Promise<Unmatched[]>
+  ignoreName(key: string): Promise<void>
+  unignoreName(key: string): Promise<void>
+  ignoredNames(): Promise<IgnoredName[]>
   linkAlias(key: string, itemId: number): Promise<void>
   /** One item's links, or every link when no id is given. */
   linkedNames(itemId?: number): Promise<LinkedName[]>

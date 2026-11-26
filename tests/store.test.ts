@@ -62,6 +62,47 @@ describe('Store', () => {
     expect(s.getItem(id)!.onHand).toBe(10)
   })
 
+  it('archives a retired item: sales stay matched, restock brings it back', () => {
+    const s = new Store(':memory:')
+    const id = s.saveItem({ name: 'Ore (Fakeium)', onHand: 3, costEach: 10, lowThreshold: null, notes: '' })
+    s.insertEvent('A', sale('1', future(), 'Ore (Fakeium)', 3, 30))
+    expect(s.getItem(id)).toMatchObject({ onHand: 0, archived: false })
+
+    s.setArchived(id, true)
+    expect(s.getItem(id)!.archived).toBe(true)
+    expect(s.unmatched()).toEqual([]) // its sales did not fall back to unmatched
+    s.setArchived(id, true) // archiving twice is harmless
+    expect(s.getItem(id)!.archived).toBe(true)
+
+    s.adjustStock(id, -1, 'correction') // a removal keeps it archived
+    expect(s.getItem(id)!.archived).toBe(true)
+    s.adjustStock(id, 50, 'bought from another player')
+    expect(s.getItem(id)).toMatchObject({ onHand: 50, archived: false })
+
+    s.setArchived(id, true)
+    s.saveItem({ id, name: 'Ore (Fakeium)', onHand: 0, costEach: 12, lowThreshold: null, notes: '' }) // edit without stock
+    expect(s.getItem(id)!.archived).toBe(true)
+    s.saveItem({ id, name: 'Ore (Fakeium)', onHand: 5, costEach: 12, lowThreshold: null, notes: '' }) // edit adds stock
+    expect(s.getItem(id)!.archived).toBe(false)
+    s.setArchived(id, true)
+    s.setArchived(id, false) // Restore button
+    expect(s.getItem(id)!.archived).toBe(false)
+  })
+
+  it('ignores and un-ignores unmatched sale names', () => {
+    const s = new Store(':memory:')
+    s.insertEvent('A', sale('1', 10, 'Odd Thing', 1, 5))
+    s.insertEvent('A', sale('2', 11, 'Odd Thing', 2, 5))
+    s.insertEvent('A', sale('3', 12, 'Other Thing', 1, 5))
+    s.ignoreName('odd thing')
+    expect(s.unmatched().map((u) => u.key)).toEqual(['other thing'])
+    expect(s.ignoredNames()).toEqual([{ key: 'odd thing', name: 'Odd Thing', sales: 2 }])
+    s.ignoreName('odd thing') // twice is harmless
+    s.unignoreName('odd thing')
+    expect(s.unmatched().map((u) => u.key).sort()).toEqual(['odd thing', 'other thing'])
+    expect(s.ignoredNames()).toEqual([])
+  })
+
   it('summarises revenue', () => {
     const s = new Store(':memory:')
     s.insertEvent('A', sale('1', 1000, 'X', 2, 500))

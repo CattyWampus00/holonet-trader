@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { InventoryItem } from '@shared/types'
-import { getStockStatus } from '@shared/stock'
+import { needsRestock } from '@shared/stock'
 import { api, type Settings } from './api'
 import { applyTheme } from './theme'
 import Dashboard from './pages/Dashboard'
@@ -36,7 +36,7 @@ export default function App() {
 
   if (!settings) return null
   const needsSetup = !settings.location
-  const lowCount = items.filter((i) => getStockStatus(i.onHand, i.lowThreshold, settings.lowThreshold) !== 'ok').length
+  const lowCount = items.filter((i) => needsRestock(i, settings.lowThreshold)).length
 
   return (
     <div className="app">

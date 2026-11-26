@@ -40,8 +40,10 @@ export class Store {
       CREATE TABLE IF NOT EXISTS scanned_files(
         character TEXT NOT NULL, file TEXT NOT NULL, PRIMARY KEY(character, file));
       CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS ignored_names(item_key TEXT PRIMARY KEY, ts INTEGER NOT NULL);
     `)
     this.migratePowerupUses(path)
+    this.addArchivedColumn()
     this.rescanIfParserChanged()
   }
 
@@ -79,6 +81,15 @@ export class Store {
     this.transaction(() => {
       this.db.exec("UPDATE events SET uses = quantity, quantity = 1 WHERE LOWER(item_name) LIKE '%powerup%' AND quantity > 1 AND uses IS NULL")
     })
+  }
+
+  /**
+   * Adds items.archived_at (NULL = active, otherwise when it was archived). Adding an empty column leaves every
+   * existing row as it was, so no backup copy is needed for this one.
+   */
+  private addArchivedColumn(): void {
+    const cols = this.db.prepare('PRAGMA table_info(items)').all() as { name: string }[]
+    if (!cols.some((c) => c.name === 'archived_at')) this.db.exec('ALTER TABLE items ADD COLUMN archived_at INTEGER')
   }
 
   // ---- settings -----------------------------------------------------------
@@ -165,8 +176,10 @@ export class Store {
     const key = itemKey(i.name)
     const now = Math.floor(Date.now() / 1000)
     if (i.id) {
+      const before = this.getItem(i.id)
       this.db.prepare('UPDATE items SET name=?, key=?, on_hand=?, cost_each=?, low_threshold=?, notes=? WHERE id=?')
         .run(i.name.trim(), key, i.onHand, i.costEach, i.lowThreshold, i.notes, i.id)
+      if (before && i.onHand > before.onHand) this.setArchived(i.id, false) // got stock back: selling it again
       return i.id
     }
     const r = this.db.prepare('INSERT INTO items(name,key,on_hand,cost_each,low_threshold,notes,tracking_since) VALUES(?,?,?,?,?,?,?)')
@@ -187,14 +200,44 @@ export class Store {
   adjustStock(id: number, delta: number, reason: string): void {
     this.db.prepare('UPDATE items SET on_hand = MAX(0, on_hand + ?) WHERE id=?').run(delta, id)
     this.db.prepare('INSERT INTO stock_moves(item_id,delta,reason,ts) VALUES(?,?,?,?)').run(id, delta, reason, Math.floor(Date.now() / 1000))
+    if (delta > 0) this.setArchived(id, false) // restocking an archived item means it is being sold again
   }
 
-  /** Sale names that matched nothing in inventory, most frequent first. */
+  /**
+   * Archive an item that will not be stocked again (for example a resource that despawned), or bring it back.
+   * An archived item keeps its sales and links; it just stops counting for restock warnings and inventory value.
+   */
+  setArchived(id: number, archived: boolean): void {
+    if (archived) this.db.prepare('UPDATE items SET archived_at = ? WHERE id=? AND archived_at IS NULL').run(Math.floor(Date.now() / 1000), id)
+    else this.db.prepare('UPDATE items SET archived_at = NULL WHERE id=?').run(id)
+  }
+
+  /** Sale names that matched nothing in inventory and were not ignored, most frequent first. */
   unmatched(): { key: string; name: string; sales: number; units: number }[] {
     return this.db
       .prepare(`SELECT item_key AS key, MIN(item_name) AS name, COUNT(*) AS sales, SUM(quantity) AS units
                 FROM events WHERE kind='sale' AND item_id IS NULL AND item_key IS NOT NULL
+                  AND item_key NOT IN (SELECT item_key FROM ignored_names)
                 GROUP BY item_key ORDER BY sales DESC LIMIT 300`)
+      .all() as never
+  }
+
+  /** Hide a sale name from "Sales not matched" (a name the player will never stock). */
+  ignoreName(key: string): void {
+    this.db.prepare('INSERT OR IGNORE INTO ignored_names(item_key, ts) VALUES(?, ?)').run(key, Math.floor(Date.now() / 1000))
+  }
+
+  unignoreName(key: string): void {
+    this.db.prepare('DELETE FROM ignored_names WHERE item_key=?').run(key)
+  }
+
+  /** Ignored sale names with how often each sold, so they can be brought back. */
+  ignoredNames(): { key: string; name: string; sales: number }[] {
+    return this.db
+      .prepare(`SELECT g.item_key AS key,
+                       COALESCE((SELECT MIN(item_name) FROM events WHERE item_key = g.item_key), g.item_key) AS name,
+                       (SELECT COUNT(*) FROM events WHERE item_key = g.item_key AND kind = 'sale') AS sales
+                FROM ignored_names g ORDER BY name COLLATE NOCASE`)
       .all() as never
   }
 
@@ -357,6 +400,7 @@ function toPriceRow(key: string, name: string, points: { ts: number; price: numb
 function toItem(r: Record<string, unknown>): InventoryItem {
   return {
     id: r.id as number, name: r.name as string, key: r.key as string, onHand: r.on_hand as number,
-    costEach: r.cost_each as number, lowThreshold: (r.low_threshold as number | null) ?? null, notes: r.notes as string
+    costEach: r.cost_each as number, lowThreshold: (r.low_threshold as number | null) ?? null, notes: r.notes as string,
+    archived: r.archived_at != null
   }
 }

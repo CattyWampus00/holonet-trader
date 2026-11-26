@@ -1,12 +1,12 @@
 # Plan: retired resources, structures (harvesters and factories)
 
-Status: **plan only, nothing built yet** (agreed with the owner 2026-11-26). Build in the order of the steps below; each step is its own release so it can be tried in game before the next one builds on it.
+Status: **Step 1 BUILT (2026-11-26); steps 2 to 5 are plan only** (agreed with the owner 2026-11-26). Build in the order of the steps below; each step is its own release so it can be tried in game before the next one builds on it.
 
 Ground rules that still apply: the app only reads files the player creates (never the game's folders), no native modules, the 8 themes stay locked (new UI uses theme variables only), fake names in tests.
 
 ---
 
-## Step 1: Archive (retired items) and Ignore (unmatched names)
+## Step 1: Archive (retired items) and Ignore (unmatched names) (DONE 2026-11-26)
 
 ### Problem
 Resources in SWG despawn and never come back. When a resource sells out, its item shows "Out" and sits in the Dashboard's "Restock needed" banner forever. Deleting the item is no fix: its sales lose their item and the name drops back into "Sales not matched to inventory".
@@ -22,9 +22,9 @@ Resources in SWG despawn and never come back. When a resource sells out, its ite
 
 - **Archive** button in the item's Edit window, and on rows whose status is Out.
 - **Restore** button in the Archived section.
-- **Restock un-archives automatically** (getting stock back means you sell it again). Owner to confirm; suggested yes.
+- **Restock un-archives automatically** (getting stock back means you sell it again): a positive Restock / adjust, or an Edit that raises On hand.
 - No automatic archiving: no mail says a resource despawned, so the player archives by hand.
-- Data: new column `items.archived_at` (NULL = active), added with the existing migration pattern (`.bak` copy first).
+- Data: new column `items.archived_at` (NULL = active). Adding an empty column changes no existing row, so no `.bak` copy is made.
 
 ### Ignore for unmatched names
 - New choice in the "Link to" menu: **Ignore this name**. Hides it from "Sales not matched".

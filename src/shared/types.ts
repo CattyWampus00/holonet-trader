@@ -76,6 +76,8 @@ export interface InventoryItem {
   /** Per-item low-stock threshold; null means "use the global default". */
   lowThreshold: number | null
   notes: string
+  /** Retired: no longer stocked (for example a despawned resource). Skipped by restock warnings and inventory value. */
+  archived: boolean
 }
 
 export type StockStatus = 'ok' | 'low' | 'out'

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { cleanItemName, newItemName } from '@shared/mailParser'
 import type { InventoryItem } from '@shared/types'
 import { getStockStatus } from '@shared/stock'
-import { api, credits, type ItemInput, type LinkedName, type Settings, type Unmatched } from '../api'
+import { api, credits, type IgnoredName, type ItemInput, type LinkedName, type Settings, type Unmatched } from '../api'
 
 interface Props { version: number; items: InventoryItem[]; settings: Settings; onChange: () => void }
 const blank: ItemInput = { name: '', onHand: 0, costEach: 0, lowThreshold: null, notes: '' }
@@ -12,16 +12,28 @@ export default function Inventory({ version, items, settings, onChange }: Props)
   const [adjusting, setAdjusting] = useState<InventoryItem | null>(null)
   const [unmatched, setUnmatched] = useState<Unmatched[]>([])
   const [links, setLinks] = useState<LinkedName[]>([])
+  const [ignored, setIgnored] = useState<IgnoredName[]>([])
   const [filter, setFilter] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
+  const [showIgnored, setShowIgnored] = useState(false)
 
   useEffect(() => {
     api.unmatched().then(setUnmatched)
     api.linkedNames().then(setLinks)
+    api.ignoredNames().then(setIgnored)
   }, [version])
 
   const [unlinkingFor, setUnlinkingFor] = useState<InventoryItem | null>(null)
 
-  const shown = items.filter((i) => i.name.toLowerCase().includes(filter.toLowerCase()))
+  const matching = items.filter((i) => i.name.toLowerCase().includes(filter.toLowerCase()))
+  const shown = matching.filter((i) => !i.archived)
+  const archived = matching.filter((i) => i.archived)
+  const archive = async (i: { id: number; name: string }) => {
+    if (!confirm(`Archive "${i.name}"?\n\nUse this for things you won't stock again, like a resource that despawned. It leaves "Restock needed" and the inventory value, and its sales stay matched. Restocking it later brings it back.`)) return false
+    await api.setArchived(i.id, true)
+    onChange()
+    return true
+  }
   const linksOf = (itemId: number) => links.filter((l) => l.itemId === itemId)
   // One link: confirm and undo it straight away. Several: open a list so the player picks which one.
   const unlinkFrom = async (i: InventoryItem) => {
@@ -60,6 +72,7 @@ export default function Inventory({ version, items, settings, onChange }: Props)
                   <td className="num">{i.lowThreshold ?? <span className="muted">{settings.lowThreshold}</span>}</td>
                   <td className="num">{i.costEach ? credits(i.costEach) : ''}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    {st === 'out' && <><button className="btn ghost" onClick={() => archive(i)}>Archive</button>{' '}</>}
                     {mine.length > 0 && <><button className="btn ghost" onClick={() => unlinkFrom(i)}>Unlink{mine.length > 1 ? ` (${mine.length})` : ''}</button>{' '}</>}
                     <button className="btn ghost" onClick={() => setAdjusting(i)}>Restock / adjust</button>{' '}
                     <button className="btn ghost" onClick={() => setEditing({ id: i.id, name: i.name, onHand: i.onHand, costEach: i.costEach, lowThreshold: i.lowThreshold, notes: i.notes })}>Edit</button>
@@ -71,6 +84,34 @@ export default function Inventory({ version, items, settings, onChange }: Props)
           </tbody>
         </table>
       </div>
+
+      {archived.length > 0 && <>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <h3>Archived ({archived.length})</h3>
+          <button className="btn ghost" onClick={() => setShowArchived(!showArchived)}>{showArchived ? 'Hide' : 'Show'}</button>
+        </div>
+        {showArchived && (
+          <div className="panel scroll">
+            <p className="muted" style={{ marginTop: 0 }}>
+              Items you no longer stock. Their sales stay matched and are still in your history. Restore one, or restock it, to make it active again.
+            </p>
+            <table>
+              <thead><tr><th>Item</th><th className="num">On hand</th><th /></tr></thead>
+              <tbody>
+                {archived.map((i) => (
+                  <tr key={i.id}>
+                    <td>{i.name}</td>
+                    <td className="num">{credits(i.onHand)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button className="btn ghost" onClick={async () => { await api.setArchived(i.id, false); onChange() }}>Restore</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </>}
 
       <h3>Sales not matched to inventory</h3>
       <div className="panel scroll">
@@ -87,11 +128,13 @@ export default function Inventory({ version, items, settings, onChange }: Props)
                 <td>
                   <select value="" onChange={async (e) => {
                     if (e.target.value === 'new') setEditing({ ...blank, name: newItemName(u.name, u.key) })
+                    else if (e.target.value === 'ignore') { await api.ignoreName(u.key); onChange() }
                     else if (e.target.value) { await api.linkAlias(u.key, Number(e.target.value)); onChange() }
                   }}>
                     <option value="">Choose…</option>
                     <option value="new">+ New item with this name</option>
-                    {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                    <option value="ignore">Ignore this name (never stocked)</option>
+                    {items.map((i) => <option key={i.id} value={i.id}>{i.name}{i.archived ? ' (archived)' : ''}</option>)}
                   </select>
                 </td>
               </tr>
@@ -99,6 +142,31 @@ export default function Inventory({ version, items, settings, onChange }: Props)
           </tbody>
         </table>
       </div>
+
+      {ignored.length > 0 && <>
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <h3>Ignored sale names ({ignored.length})</h3>
+          <button className="btn ghost" onClick={() => setShowIgnored(!showIgnored)}>{showIgnored ? 'Hide' : 'Show'}</button>
+        </div>
+        {showIgnored && (
+          <div className="panel scroll">
+            <table>
+              <thead><tr><th>Name in sale mails</th><th className="num">Sales</th><th /></tr></thead>
+              <tbody>
+                {ignored.map((g) => (
+                  <tr key={g.key}>
+                    <td>{cleanItemName(g.name)}</td>
+                    <td className="num">{g.sales}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button className="btn ghost" onClick={async () => { await api.unignoreName(g.key); onChange() }}>Un-ignore</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </>}
 
       {links.length > 0 && <>
         <h3>Linked sale names</h3>
@@ -126,7 +194,9 @@ export default function Inventory({ version, items, settings, onChange }: Props)
       </>}
 
       {editing && <EditModal item={editing} onClose={() => setEditing(null)} onSave={async (i) => { await api.saveItem(i); setEditing(null); onChange() }}
-        onDelete={editing.id ? async () => { await api.deleteItem(editing.id!); setEditing(null); onChange() } : undefined} onChanged={onChange} />}
+        onDelete={editing.id ? async () => { await api.deleteItem(editing.id!); setEditing(null); onChange() } : undefined}
+        onArchive={editing.id ? async () => { if (await archive({ id: editing.id!, name: editing.name })) setEditing(null) } : undefined}
+        onChanged={onChange} />}
       {unlinkingFor && (
         <div className="modal-back" onClick={() => setUnlinkingFor(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -174,7 +244,7 @@ function LinkedNames({ itemId, onUnlinked }: { itemId: number; onUnlinked: (give
   )
 }
 
-function EditModal({ item, onClose, onSave, onDelete, onChanged }: { item: ItemInput; onClose: () => void; onSave: (i: ItemInput) => void; onDelete?: () => void; onChanged: () => void }) {
+function EditModal({ item, onClose, onSave, onDelete, onArchive, onChanged }: { item: ItemInput; onClose: () => void; onSave: (i: ItemInput) => void; onDelete?: () => void; onArchive?: () => void; onChanged: () => void }) {
   const [f, setF] = useState(item)
   const num = (v: string) => Math.max(0, Math.floor(Number(v) || 0))
   return (
@@ -193,7 +263,10 @@ function EditModal({ item, onClose, onSave, onDelete, onChanged }: { item: ItemI
         <input value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} />
         {item.id && <LinkedNames itemId={item.id} onUnlinked={(givenBack) => { setF((p) => ({ ...p, onHand: p.onHand + givenBack })); onChanged() }} />}
         <div className="row" style={{ marginTop: 16, justifyContent: 'space-between' }}>
-          <span>{onDelete && <button className="btn danger" onClick={() => confirm('Delete this item?') && onDelete()}>Delete</button>}</span>
+          <span>
+            {onDelete && <button className="btn danger" onClick={() => confirm('Delete this item?\n\nIts sales go back to "Sales not matched". To retire an item you won\'t stock again (like a despawned resource), use Archive instead.') && onDelete()}>Delete</button>}
+            {onArchive && <>{' '}<button className="btn ghost" onClick={onArchive}>Archive</button></>}
+          </span>
           <span><button className="btn ghost" onClick={onClose}>Cancel</button>{' '}<button className="btn" disabled={!f.name.trim()} onClick={() => onSave(f)}>Save</button></span>
         </div>
       </div>
