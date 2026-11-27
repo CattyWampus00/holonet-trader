@@ -84,9 +84,18 @@ describe('countdowns', () => {
     const history = [{ state: 'running' as const, ts: T }, { state: 'idle' as const, ts: T + 10 * H }]
     const latest = { ...harvester.latest, rate: { value: 25, ts: T }, hopper: { value: 50, ts: T } }
     const f = forecast({ ...harvester, history, latest }, T + 40 * H)
-    expect(f.hopper!.left).toBe(431046 * 0.5 - 25 * 10)
+    expect(f.hopper!.left).toBe(431046 * 0.5 - 25 * 60 * 10)
     expect(f.hopper!.paused).toBe(true)
     expect(f.maintenance.left).toBe(63367 - 84 * 40)
+  })
+
+  it('reads the rate as units a minute (matches a real hopper filling 26% to 50% in about 9.5 h)', () => {
+    const history = [{ state: 'running' as const, ts: T }]
+    const latest = { ...harvester.latest, rate: { value: 203.35, ts: T }, hopper: { value: 50, ts: T } }
+    const f = forecast({ ...harvester, storage: 486665, history, latest }, T)
+    expect(f.hopper!.hoursLeft).toBeCloseTo(486665 * 0.5 / (203.35 * 60), 6) // about 20 hours, not 50 days
+    expect(f.hopper!.hoursLeft!).toBeGreaterThan(19)
+    expect(f.hopper!.hoursLeft!).toBeLessThan(21)
   })
 
   it('never goes below empty, and rates the urgency', () => {

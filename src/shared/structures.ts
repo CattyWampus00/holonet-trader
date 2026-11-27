@@ -142,9 +142,11 @@ export function forecast(s: {
   const { hopper: pct, rate } = s.latest
   if (!pct || !rate || !rate.value || !s.storage) return { maintenance, power, hopper: { hoursLeft: null, left: null, paused } }
   const room = s.storage * (100 - pct.value) / 100
-  const filled = rate.value * hoursWhere(s.history, pct.ts, now, (st) => st === 'running')
+  // The Operate panel rate is units per minute (checked against two real readings: 26% to 50% of a 486,665 hopper in 9.5 h at 203/min).
+  const perHour = rate.value * 60
+  const filled = perHour * hoursWhere(s.history, pct.ts, now, (st) => st === 'running')
   const left = Math.max(0, room - filled)
-  return { maintenance, power, hopper: { hoursLeft: left / rate.value, left, paused } }
+  return { maintenance, power, hopper: { hoursLeft: left / perHour, left, paused } }
 }
 
 /** How urgent a countdown is: under 2 days is urgent, under 7 days is soon. */

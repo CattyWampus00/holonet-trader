@@ -717,7 +717,7 @@ function ReadingModal({ structure, onClose, onSave }: { structure: Structure; on
         {structure.kind === 'vendor' && <NumField label="Number of Items For Sale (Vendor Status)" value={r.items} step="1" onChange={(v) => setR({ ...r, items: v == null ? null : Math.floor(v) })} />}
         {structure.kind === 'harvester' && (
           <>
-            <NumField label="Actual Rate, KG/H (Operate panel, while running)" value={r.extractionRate} onChange={(v) => setR({ ...r, extractionRate: v })} />
+            <NumField label="Actual rate, units a minute (Operate panel, while running)" value={r.extractionRate} onChange={(v) => setR({ ...r, extractionRate: v })} />
             <NumField label="Hopper Capacity % (Operate panel)" value={r.hopperPct} onChange={(v) => setR({ ...r, hopperPct: v == null ? null : Math.min(100, v) })} />
           </>
         )}

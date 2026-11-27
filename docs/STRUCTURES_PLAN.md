@@ -57,6 +57,8 @@ What the game shows (owner's screenshots, 2026-11-26, Elite Mineral Mining Insta
 | Operate panel | Actual Rate | `0.00 KG/H` while off | **the real extraction rate while running.** Enter this one |
 | Operate panel | Capacity | `0%` | how full the hopper is |
 
+**Correction (2026-11-27):** despite the "KG/H" label, the Actual Rate is units **per minute**. Two real readings proved it: a 486,665 hopper went from 26% to 50% in 9.5 h at 203.35, which is about 115,000 units, or 203 a minute. Read as per hour, the hopper countdown came out 60 times too long (49 days instead of about 20 hours). `forecast` multiplies the rate by 60.
+
 Factory (Wearables Factory, Structure Status, same layout): Maintenance Rate `20 cr/hr (26)`, Power Consumption `50 units/hr`, Maintenance Pool `10979 (22 days, 20 h...)`, Power Reserves `19866 (16 days, 13 hou...)`, Factory Production Efficiency `35`. Checks: 10,979 / 20 = 549 h = 22 days 21 h, and 19,866 / 50 = 397 h = 16 days 13 h, matching the game. Factories have no Operate panel numbers to track.
 
 **Scope for the first build: elite harvesters and factories only.** Lower-tier harvesters are added another day (their lots and rates are still unknown); the machine type catalog lets them be added later without code changes.
