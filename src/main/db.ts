@@ -259,10 +259,11 @@ export class Store {
     if (!e || (!e.structure && e.kind !== 'vendor_maint')) return
     this.transaction(() => {
       this.applyMailTo(eventId, structureId)
-      const s = this.db.prepare('SELECT name, x FROM structures WHERE id=?').get(structureId) as { name: string; x: number | null } | undefined
+      const s = this.db.prepare('SELECT name FROM structures WHERE id=?').get(structureId) as { name: string } | undefined
       if (!s) return
-      // The spot identifies it best (and is all a vendor mail has). Kept only when none was entered, so a typed spot wins.
-      if (e.x != null && s.x == null) this.db.prepare('UPDATE structures SET x=?, y=? WHERE id=?').run(e.x, e.y, structureId)
+      // The spot identifies it best (and is all a vendor mail has). Linking is the player saying "this mail is that structure",
+      // and the game's numbers are exact, so they replace a typed spot (easy to get wrong: /loc shows x z y).
+      if (e.x != null) this.db.prepare('UPDATE structures SET x=?, y=? WHERE id=?').run(e.x, e.y, structureId)
       // Vendor mails carry a placeholder, not a name: saving it would tie every later vendor mail to this vendor.
       if (e.structure && e.kind !== 'vendor_maint' && itemKey(s.name) !== itemKey(e.structure)) {
         this.db.prepare('INSERT OR IGNORE INTO structure_names(structure_id, name) VALUES(?,?)').run(structureId, e.structure.replace(/\s+/g, ' ').trim())
@@ -742,7 +743,7 @@ export class Store {
 
   vendorAlerts() {
     return this.db
-      .prepare(`SELECT id,character,ts,kind,vendor FROM events WHERE kind IN ('vendor_empty','vendor_maint') ORDER BY ts DESC LIMIT 20`)
+      .prepare(`SELECT id,character,ts,kind,vendor FROM events WHERE kind IN ('vendor_empty','vendor_maint') AND dismissed_at IS NULL ORDER BY ts DESC LIMIT 20`)
       .all()
   }
 }

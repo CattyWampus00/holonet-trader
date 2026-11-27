@@ -379,4 +379,23 @@ describe('Houses and vendors (Step 8)', () => {
     expect(s.listStructures()[0]!.x).toBe(5)
     expect(s.structureMails()[0]!.dismissed).toBe(true) // the dismissal was kept
   })
+
+  it('linking a mail replaces a mistyped spot with the exact one, and dismissed vendor notices leave the alerts', () => {
+    const s = new Store(':memory:')
+    // y typed from the middle /loc number (height) instead of the last one, so the mail's spot does not match.
+    const v = s.saveStructure({ ...base, character: 'Testchar', name: 'Shop A', kind: 'vendor', planet: 'Talus', lots: 0, maintPerHour: 6, x: 1300, y: 6 })
+    s.saveStructure({ ...base, character: 'Testchar', name: 'Shop B', kind: 'vendor', planet: 'Talus', lots: 0, maintPerHour: 6, x: 1293, y: 7 })
+    s.insertEvent('Testchar', vendorMail('v1', 1299.2, -2349.6))
+    const m = s.structureMails()[0]!
+    expect(m.structureId).toBeNull()
+    s.linkMail(m.id, v)
+    const shopA = s.listStructures().find((x) => x.id === v)!
+    expect([shopA.x, shopA.y]).toEqual([1299.2, -2349.6])
+    s.insertEvent('Testchar', vendorMail('v2', 1299.2, -2349.6))
+    expect(s.structureMails().find((x) => x.id !== m.id)!.structureId).toBe(v)
+    s.insertEvent('Testchar', { mailId: 'e1', timestamp: later(), kind: 'vendor_empty', vendor: 'Shop A' })
+    const empty = (s.vendorAlerts() as { id: number; kind: string }[]).find((a) => a.kind === 'vendor_empty')!
+    s.dismissMail(empty.id)
+    expect((s.vendorAlerts() as { kind: string }[]).some((a) => a.kind === 'vendor_empty')).toBe(false)
+  })
 })

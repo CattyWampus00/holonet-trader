@@ -445,12 +445,12 @@ function Countdowns({ s, now }: { s: Structure; now: number }) {
 }
 
 /** Number box where empty means "not entered" (null), not 0. */
-function NumField({ label, value, onChange, step }: { label: string; value: number | null; onChange: (v: number | null) => void; step?: string }) {
+function NumField({ label, value, onChange, step, signed }: { label: string; value: number | null; onChange: (v: number | null) => void; step?: string; signed?: boolean }) {
   return (
     <>
       <label>{label}</label>
-      <input type="number" min={0} step={step ?? 'any'} value={value ?? ''}
-        onChange={(e) => onChange(e.target.value === '' ? null : Math.max(0, Number(e.target.value)))} />
+      <input type="number" min={signed ? undefined : 0} step={step ?? 'any'} value={value ?? ''}
+        onChange={(e) => onChange(e.target.value === '' ? null : signed ? Number(e.target.value) : Math.max(0, Number(e.target.value)))} />
     </>
   )
 }
@@ -556,13 +556,13 @@ function StructureModal({ structure, types, characters, takenNames, hint, vendor
         <label>Planet</label>
         <input value={s.planet} onChange={(e) => setS({ ...s, planet: e.target.value })} />
         <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
-          <span style={{ flex: 1 }}><NumField label="Spot x (optional)" value={s.x ?? null} onChange={(v) => setS({ ...s, x: v })} /></span>
-          <span style={{ flex: 1 }}><NumField label="Spot y (optional)" value={s.y ?? null} onChange={(v) => setS({ ...s, y: v })} /></span>
+          <span style={{ flex: 1 }}><NumField signed label="Spot x (optional)" value={s.x ?? null} onChange={(v) => setS({ ...s, x: v })} /></span>
+          <span style={{ flex: 1 }}><NumField signed label="Spot y (optional)" value={s.y ?? null} onChange={(v) => setS({ ...s, y: v })} /></span>
         </div>
         <div className="muted" style={{ fontSize: 12 }}>
           {s.kind === 'vendor'
-            ? 'The vendor maintenance mail has no vendor name, only its spot. Fill these in (or use Link to… on a mail) when you have more than one vendor on a planet.'
-            : 'Structure Status shows "PLANET x z y": enter the first and last numbers. Helps match maintenance mails.'}
+            ? 'The vendor maintenance mail has no vendor name, only its spot. /loc shows "x z y": enter the first and last numbers, not the middle one (height). Easiest: leave blank and use Link to… on its mail, which saves the exact spot.'
+            : 'Structure Status shows "PLANET x z y": enter the first and last numbers, not the middle one (height). Helps match maintenance mails.'}
         </div>
         {!structure.id && statesFor(s.kind).length > 1 && (
           <>

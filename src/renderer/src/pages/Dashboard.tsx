@@ -79,10 +79,13 @@ export default function Dashboard({ version, items, settings, characters }: { ve
         </div>
       )}
       {(() => {
-        // "Vendor is empty" stays here; empty maintenance pools are shown above.
-        const empty = alerts.find((a) => a.kind === 'vendor_empty')
-        return empty && Date.now() / 1000 - empty.ts < 7 * 86400 && (
-          <div className="banner">Vendor notice: {empty.vendor} is empty ({empty.character}).</div>
+        // "Vendor is empty" stays here; empty maintenance pools are shown above. Dismissed notices are left out by the query.
+        const empty = alerts.filter((a) => a.kind === 'vendor_empty' && Date.now() / 1000 - a.ts < 7 * 86400)
+        return empty.length > 0 && (
+          <div className="banner row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 12 }}>
+            <span>Vendor empty: {[...new Set(empty.map((a) => `${a.vendor ?? 'a vendor'} (${a.character})`))].join(', ')}.</span>
+            <button className="btn ghost" title="Hide this notice" onClick={async () => { for (const a of empty) await api.dismissMail(a.id); setAlerts(await api.vendorAlerts()) }}>Dismiss</button>
+          </div>
         )
       })()}
       <div className="filters">
