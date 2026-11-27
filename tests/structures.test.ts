@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attention, drains, forecast, formatHours, hoursWhere, lotsAfter, lotsComparable, matchStructure, needsAttention, lotsByCharacter, MAX_LOTS, parseOperateResource, resourceItemName, resourceKeyOf, upkeepPerDay } from '../src/shared/structures'
+import { attention, DASHBOARD_HOURS, drains, forecast, formatHours, hoursWhere, lotsAfter, lotsComparable, matchStructure, needsAttention, lotsByCharacter, MAX_LOTS, parseOperateResource, resourceItemName, resourceKeyOf, upkeepPerDay } from '../src/shared/structures'
 
 describe('drains', () => {
   it('follows what the owner confirmed in game', () => {
@@ -138,6 +138,9 @@ describe('needsAttention', () => {
       ['Low power', 'power', 'urgent'],
       ['Low maint', 'maintenance', 'soon']
     ])
+    // The Dashboard window: only under 14 hours left. 30 h of power is not listed yet; 10 h is.
+    expect(needsAttention(list, T, DASHBOARD_HOURS)).toEqual([])
+    expect(needsAttention(list, T + 20 * H, DASHBOARD_HOURS).map((a) => [a.name, a.what])).toEqual([['Low power', 'power']])
   })
 })
 

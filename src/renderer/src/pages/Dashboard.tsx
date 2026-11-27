@@ -3,7 +3,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { cleanItemName } from '@shared/mailParser'
 import type { CharacterInfo, InventoryItem, Structure, StructureMail } from '@shared/types'
 import { needsRestock } from '@shared/stock'
-import { formatHours, needsAttention, POOL_LABEL, upkeepPerDay } from '@shared/structures'
+import { DASHBOARD_HOURS, formatHours, needsAttention, POOL_LABEL, upkeepPerDay } from '@shared/structures'
 import { useNow } from './Structures'
 import { api, credits, type Settings, type Summary, type VendorAlert } from '../api'
 import CharacterSelect from '../components/CharacterSelect'
@@ -46,7 +46,7 @@ export default function Dashboard({ version, items, settings, characters }: { ve
   // Plain total: units on hand times the cost each that was entered. No cost entered adds 0; archived items are left out.
   const inventoryValue = items.reduce((sum, i) => (i.archived ? sum : sum + i.onHand * i.costEach), 0)
   const now = useNow()
-  const due = needsAttention(structures, now)
+  const due = needsAttention(structures, now, DASHBOARD_HOURS)
   const upkeep = upkeepPerDay(structures)
 
   return (
@@ -54,7 +54,12 @@ export default function Dashboard({ version, items, settings, characters }: { ve
       <h2>Dashboard</h2>
       {low.length > 0 && (
         <div className="banner bad">
-          <b>Restock needed:</b> {low.map((i) => `${i.name} (${i.onHand})`).join(', ')}
+          <b>Restock needed</b> <span className="muted">({low.length} items, number on hand)</span>
+          <ul className="restock-grid">
+            {[...low].sort((a, b) => a.name.localeCompare(b.name)).map((i) => (
+              <li key={i.id}><span>{i.name}</span><b style={{ color: i.onHand === 0 ? 'var(--bad)' : 'var(--warn)' }}>{i.onHand}</b></li>
+            ))}
+          </ul>
         </div>
       )}
       {bankPaying.length > 0 && (
@@ -107,7 +112,7 @@ export default function Dashboard({ version, items, settings, characters }: { ve
           </div>
           {due.length > 0 && (
             <>
-              <h3>Needs attention</h3>
+              <h3>Needs attention <span className="muted" style={{ fontSize: 12, fontWeight: 400 }}>under {DASHBOARD_HOURS} hours left</span></h3>
               <div className="panel">
                 <table>
                   <thead><tr><th>Structure</th><th>Character</th><th>What</th><th className="num">Time left</th></tr></thead>

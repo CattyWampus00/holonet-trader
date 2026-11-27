@@ -159,20 +159,25 @@ export function attention(hoursLeft: number | null): 'urgent' | 'soon' | null {
 
 export const POOL_LABEL = { maintenance: 'Maintenance runs out', power: 'Power runs out', hopper: 'Hopper full' } as const
 
+/** The Dashboard lists a countdown only once it is this close (owner's choice, 2026-11-27: hoppers fill in about 40 h, so 48 h showed every harvester all the time). */
+export const DASHBOARD_HOURS = 14
+
 /**
- * Everything due within 7 days, soonest first, for the Dashboard's "Needs attention" list. Paused clocks
- * (for example a packed-up deed) are left out because nothing is being used up.
+ * Everything due within 7 days (or `withinHours`, if smaller), soonest first, for the Dashboard's "Needs attention"
+ * list. Paused clocks (for example a packed-up deed) are left out because nothing is being used up.
  */
 export function needsAttention(
   list: (Parameters<typeof forecast>[0] & { id: number; name: string; character: string })[],
-  now: number
+  now: number,
+  /** Only countdowns with less than this many hours left (the Dashboard uses {@link DASHBOARD_HOURS}). */
+  withinHours = Infinity
 ): { id: number; name: string; character: string; what: keyof typeof POOL_LABEL; hoursLeft: number; level: 'urgent' | 'soon' }[] {
   const out: ReturnType<typeof needsAttention> = []
   for (const s of list) {
     const f = forecast(s, now)
     for (const what of ['maintenance', 'power', 'hopper'] as const) {
       const c = f[what]
-      if (!c || c.paused || c.hoursLeft == null) continue
+      if (!c || c.paused || c.hoursLeft == null || c.hoursLeft >= withinHours) continue
       const level = attention(c.hoursLeft)
       if (level) out.push({ id: s.id, name: s.name, character: s.character, what, hoursLeft: c.hoursLeft, level })
     }
