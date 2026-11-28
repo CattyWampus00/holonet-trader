@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { cleanItemName } from '@shared/mailParser'
 import type { CharacterInfo, InventoryItem, Structure, StructureMail } from '@shared/types'
-import { needsRestock } from '@shared/stock'
+import { needsRestock, stockValue } from '@shared/stock'
 import { DASHBOARD_HOURS, formatHours, needsAttention, POOL_LABEL, upkeepPerDay } from '@shared/structures'
 import { useNow } from './Structures'
 import { api, credits, type Settings, type Summary, type VendorAlert } from '../api'
@@ -46,7 +46,7 @@ export default function Dashboard({ version, items, settings, characters, onChan
   const t = s?.totals
   const net = t && s ? t.revenue - s.spent.spent : 0
   // Plain total: units on hand times the cost each that was entered. No cost entered adds 0; archived items are left out.
-  const inventoryValue = items.reduce((sum, i) => (i.archived ? sum : sum + i.onHand * i.costEach), 0)
+  const inventoryValue = items.reduce((sum, i) => (i.archived ? sum : sum + stockValue(i.onHand, i.costEach)), 0)
   const now = useNow()
   const due = needsAttention(structures, now, DASHBOARD_HOURS)
   const upkeep = upkeepPerDay(structures)

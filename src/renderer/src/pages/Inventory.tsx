@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { cleanItemName, newItemName } from '@shared/mailParser'
 import type { InventoryItem } from '@shared/types'
-import { getStockStatus } from '@shared/stock'
+import { costText, getStockStatus, parseCost } from '@shared/stock'
 import { api, credits, type IgnoredName, type ItemInput, type LinkedName, type Settings, type Unmatched } from '../api'
 
 interface Props { version: number; items: InventoryItem[]; settings: Settings; onChange: () => void }
@@ -72,7 +72,7 @@ export default function Inventory({ version, items, settings, onChange }: Props)
                   <td><span className={`pill ${st}`}>{st === 'ok' ? 'OK' : st === 'low' ? 'Low' : 'Out'}</span></td>
                   <td className="num">{credits(i.onHand)}</td>
                   <td className="num">{i.lowThreshold ?? <span className="muted">{settings.lowThreshold}</span>}</td>
-                  <td className="num">{i.costEach ? credits(i.costEach) : ''}</td>
+                  <td className="num">{i.costEach ? costText(i.costEach) : ''}</td>
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {st === 'out' && <><button className="btn ghost" onClick={() => archive(i)}>Archive</button>{' '}</>}
                     {mine.length > 0 && <><button className="btn ghost" onClick={() => unlinkFrom(i)}>Unlink{mine.length > 1 ? ` (${mine.length})` : ''}</button>{' '}</>}
@@ -256,6 +256,8 @@ function LinkedNames({ itemId, onUnlinked }: { itemId: number; onUnlinked: (give
 function EditModal({ item, onClose, onSave, onDelete, onArchive, onChanged }: { item: ItemInput; onClose: () => void; onSave: (i: ItemInput) => void; onDelete?: () => void; onArchive?: () => void; onChanged: () => void }) {
   const [f, setF] = useState(item)
   const num = (v: string) => Math.max(0, Math.floor(Number(v) || 0))
+  // Cost is kept as typed text until Save: parsing each keystroke turned "0." into 0, so 0.5 could never be entered.
+  const [cost, setCost] = useState(item.costEach ? String(item.costEach) : '')
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -265,7 +267,8 @@ function EditModal({ item, onClose, onSave, onDelete, onArchive, onChanged }: { 
         <label>On hand (units)</label>
         <input type="number" min={0} value={f.onHand} onChange={(e) => setF({ ...f, onHand: num(e.target.value) })} />
         <label>Cost each (credits, optional)</label>
-        <input type="number" min={0} value={f.costEach} onChange={(e) => setF({ ...f, costEach: num(e.target.value) })} />
+        <input inputMode="decimal" placeholder="0" value={cost} onChange={(e) => setCost(e.target.value)} />
+        <div className="muted" style={{ fontSize: '0.85em', marginTop: 4 }}>Fractions are fine, such as 0.5. Stock value rounds up to whole credits.</div>
         <label>Warn when at or below (blank = default)</label>
         <input type="number" min={0} value={f.lowThreshold ?? ''} onChange={(e) => setF({ ...f, lowThreshold: e.target.value === '' ? null : num(e.target.value) })} />
         <label>Notes</label>
@@ -276,7 +279,7 @@ function EditModal({ item, onClose, onSave, onDelete, onArchive, onChanged }: { 
             {onDelete && <button className="btn danger" onClick={() => confirm('Delete this item?\n\nIts sales go back to "Sales not matched". To retire an item you won\'t stock again (like a despawned resource), use Archive instead.') && onDelete()}>Delete</button>}
             {onArchive && <>{' '}<button className="btn ghost" onClick={onArchive}>Archive</button></>}
           </span>
-          <span><button className="btn ghost" onClick={onClose}>Cancel</button>{' '}<button className="btn" disabled={!f.name.trim()} onClick={() => onSave(f)}>Save</button></span>
+          <span><button className="btn ghost" onClick={onClose}>Cancel</button>{' '}<button className="btn" disabled={!f.name.trim()} onClick={() => onSave({ ...f, costEach: parseCost(cost) })}>Save</button></span>
         </div>
       </div>
     </div>

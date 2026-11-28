@@ -27,3 +27,23 @@ export function getStockStatus(onHand: number, itemThreshold: number | null, glo
   const warnAt = itemThreshold ?? globalDefault
   return onHand <= warnAt ? 'low' : 'ok'
 }
+
+/**
+ * Cost each can be a fraction of a credit (low-quality resources often cost 0.5). The game only deals in whole
+ * credits, so a stack's value always rounds UP: 25 units at 0.5 is 13. The tiny rounding first stops float noise
+ * (0.07 × 100 = 7.000000000000001) from adding a credit that isn't there.
+ */
+export function stockValue(onHand: number, costEach: number): number {
+  return Math.ceil(Math.round(onHand * costEach * 1e6) / 1e6)
+}
+
+/** Cost each as typed in the item form: blank or bad input = 0, never negative, fractions kept. */
+export function parseCost(text: string): number {
+  const n = Number(text.trim().replace(/,/g, '')) // "1,200" is twelve hundred
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+/** Cost each for display: "0.5", "1,200", "2.25" (at most 2 decimals, never rounded to a whole credit). */
+export function costText(n: number): string {
+  return n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+}

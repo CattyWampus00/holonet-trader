@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_LOW_THRESHOLD, getStockStatus, needsRestock } from '../src/shared/stock'
+import { costText, DEFAULT_LOW_THRESHOLD, getStockStatus, needsRestock, parseCost, stockValue } from '../src/shared/stock'
 
 describe('getStockStatus', () => {
   it('is out when nothing is left, even when the warning level is set (the owner\'s 0 on hand / warn at 5 case)', () => {
@@ -41,5 +41,27 @@ describe('needsRestock', () => {
     expect(needsRestock({ onHand: 3, lowThreshold: null, archived: false }, 5)).toBe(true)
     expect(needsRestock({ onHand: 9, lowThreshold: null, archived: false }, 5)).toBe(false)
     expect(needsRestock({ onHand: 0, lowThreshold: null, archived: true }, 5)).toBe(false) // despawned resource
+  })
+})
+
+describe('fractional cost each', () => {
+  it('a stack value always rounds up to a whole credit', () => {
+    expect(stockValue(25, 0.5)).toBe(13)
+    expect(stockValue(1, 0.5)).toBe(1)
+    expect(stockValue(4, 0.5)).toBe(2)
+    expect(stockValue(0, 0.5)).toBe(0)
+    expect(stockValue(100, 0.07)).toBe(7) // float noise is not a credit
+  })
+  it('reads what the player types', () => {
+    expect(parseCost('0.5')).toBe(0.5)
+    expect(parseCost('.5')).toBe(0.5)
+    expect(parseCost('1,200')).toBe(1200)
+    expect(parseCost('')).toBe(0)
+    expect(parseCost('-3')).toBe(0)
+    expect(parseCost('abc')).toBe(0)
+  })
+  it('shows fractions instead of rounding them away', () => {
+    expect(costText(0.5)).toBe('0.5')
+    expect(costText(1200)).toBe('1,200')
   })
 })
