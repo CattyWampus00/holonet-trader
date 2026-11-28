@@ -1,8 +1,10 @@
 import type { ThemeId } from '@shared/themes'
 import type { CustomerRow, DetectedLocation, HarvesterResource, InventoryItem, MachineType, MachineTypeInput, PriceRow, PriceSeries, SaleRow, ScanResult, Structure, StructureInput, StructureMail, StructureReading } from '@shared/types'
 import type { StructureState } from '@shared/structures'
+import type { LateMail } from '@shared/yearArchive'
 
-export interface Settings { serverDir: string | null; lowThreshold: number; location: DetectedLocation | null; theme: ThemeId; autoUpdate: boolean; version: string }
+export interface Settings { serverDir: string | null; lowThreshold: number; location: DetectedLocation | null; theme: ThemeId; autoUpdate: boolean; salesYearStart: number | null; closedYears: number[]; closeSnoozed: number | null; version: string }
+export interface ArchiveResult { folder: string; files: string[]; sales: number; purchases: number }
 export interface Row { name: string; sales: number; revenue: number; units?: number }
 export interface Summary {
   totals: { sales: number; revenue: number; units: number }
@@ -23,6 +25,22 @@ export interface Api {
   setThreshold(n: number): Promise<void>
   setTheme(id: ThemeId): Promise<void>
   setAutoUpdate(on: boolean): Promise<void>
+  /** Year-end close: folder picker, archive, then the year closes. null = cancelled; an error leaves the year open. */
+  closeYear(year: number): Promise<ArchiveResult | { error: string } | null>
+  /** Reopens the newest closed year (its archive files stay). */
+  reopenYear(year: number): Promise<void>
+  /** "Not now" on the year-end reminder. */
+  snoozeClose(year: number): Promise<void>
+  salesYears(): Promise<number[]>
+  /** Asks for a folder, then writes the year's archive there. null = the player cancelled. */
+  exportYear(year: number): Promise<ArchiveResult | { error: string } | null>
+  openArchiveFolder(): Promise<void>
+  /** Closed years whose archive is missing mail imported after it was saved. */
+  lateMail(): Promise<LateMail[]>
+  /** Rewrites a closed year's archive in its saved folder (asks for one only if it is gone). null = cancelled. */
+  updateArchive(year: number): Promise<ArchiveResult | { error: string } | null>
+  /** "Not now" on the late-mail notice, until more mail for that year arrives. */
+  dismissLateMail(year: number): Promise<void>
   quitApp(): Promise<void>
   toggleFullScreen(): Promise<void>
   detectLocations(): Promise<DetectedLocation[]>

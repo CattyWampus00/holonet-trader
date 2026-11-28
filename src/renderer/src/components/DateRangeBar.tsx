@@ -1,7 +1,10 @@
 import { PRESETS, rangeLabel, toInputDate, type Preset, type RangeValue } from '../dateRange'
 
-/** Preset buttons plus a Custom option that reveals From / To calendar pickers. */
-export default function DateRangeBar({ value, onChange }: { value: RangeValue; onChange: (v: RangeValue) => void }) {
+/**
+ * Preset buttons plus a Custom option that reveals From / To calendar pickers. Pass `yearStart` on the tabs that start
+ * fresh after a year close (Dashboard, Sales Log, Customers), so the label shows the dates actually used.
+ */
+export default function DateRangeBar({ value, onChange, yearStart = null }: { value: RangeValue; onChange: (v: RangeValue) => void; yearStart?: number | null }) {
   const pick = (preset: Preset) => {
     // Opening Custom for the first time starts from the last 30 days so the pickers are never empty.
     if (preset === 'custom' && !value.from && !value.to) {
@@ -28,7 +31,7 @@ export default function DateRangeBar({ value, onChange }: { value: RangeValue; o
           <label>To <input type="date" value={value.to} min={value.from || undefined} max={today} onChange={(e) => onChange({ ...value, to: e.target.value })} /></label>
         </div>
       )}
-      <span className="muted range-label">{rangeLabel(value)}</span>
+      <span className="muted range-label">{rangeLabel(value, new Date(), yearStart)}</span>
     </div>
   )
 }

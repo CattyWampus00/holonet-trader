@@ -1,9 +1,11 @@
-import { copyFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { summarizeCustomers, type SaleLine } from '../shared/customers'
 import { cleanItemName, itemKey } from '../shared/mailParser'
 import { classifyTrend, summarize, unitPrice } from '../shared/priceStats'
 import type { CustomerRow, HarvesterResource, InventoryItem, MachineType, MachineTypeInput, ParsedMail, PricePointRow, PriceRow, PriceSeries, SaleRow, Structure, StructureInput, StructureMail, StructureReading } from '../shared/types'
+import { archiveFiles, customersCsv, salesCsv, summaryCsv, yearBounds, type YearCount, type YearSummary } from '../shared/yearArchive'
 import { matchStructure, resourceItemName, resourceKeyOf, type StructureKind, type StructureState } from '../shared/structures'
 
 /**
@@ -658,12 +660,7 @@ export class Store {
     if (f.to) { where.push('ts <= ?'); args.push(f.to) }
     if (f.search) { where.push('(item_name LIKE ? OR vendor LIKE ? OR counterparty LIKE ?)'); const s = `%${f.search}%`; args.push(s, s, s) }
     const sql = `SELECT * FROM events ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ts DESC LIMIT ${Math.min(f.limit ?? 500, 5000)}`
-    return (this.db.prepare(sql).all(...args) as Record<string, unknown>[]).map((r) => ({
-      id: r.id as number, character: r.character as string, ts: r.ts as number, kind: r.kind as SaleRow['kind'],
-      vendor: r.vendor as string | null, itemName: r.item_name as string | null, quantity: r.quantity as number,
-      uses: r.uses as number | null, price: r.price as number, counterparty: r.counterparty as string | null, city: r.city as string | null,
-      planet: r.planet as string | null, itemId: r.item_id as number | null
-    }))
+    return (this.db.prepare(sql).all(...args) as Record<string, unknown>[]).map(toSaleRow)
   }
 
   /** `character` limits every figure to one player character; omit it for all characters. */
@@ -745,6 +742,84 @@ export class Store {
     return this.db
       .prepare(`SELECT id,character,ts,kind,vendor FROM events WHERE kind IN ('vendor_empty','vendor_maint') AND dismissed_at IS NULL ORDER BY ts DESC LIMIT 20`)
       .all()
+  }
+
+  // ---- year-end archive (docs/YEAR_END_PLAN.md) ---------------------------------
+  /** Years (local time) that have at least one sale or purchase, newest first. */
+  salesYears(): number[] {
+    return (this.db.prepare(`SELECT DISTINCT CAST(strftime('%Y', ts, 'unixepoch', 'localtime') AS INTEGER) AS yr FROM events
+      WHERE kind IN ('sale','purchase') ORDER BY yr DESC`).all() as { yr: number }[]).map((r) => r.yr)
+  }
+
+  /** Sales and purchases per local year, so a closed year's archive can be compared with the database (late mail). */
+  yearCounts(): Record<number, YearCount> {
+    const out: Record<number, YearCount> = {}
+    for (const r of this.db.prepare(`SELECT CAST(strftime('%Y', ts, 'unixepoch', 'localtime') AS INTEGER) AS yr,
+      SUM(kind='sale') AS sales, SUM(kind='purchase') AS purchases FROM events WHERE kind IN ('sale','purchase') GROUP BY yr`)
+      .all() as { yr: number; sales: number; purchases: number }[]) out[r.yr] = { sales: r.sales, purchases: r.purchases }
+    return out
+  }
+
+  /**
+   * Writes one financial year's archive into `folder`: a full copy of the database plus Sales, Customers and Summary
+   * CSVs. Reads only; nothing in this database changes. Each file is written under a temporary name and renamed when
+   * complete, so a failure never leaves a half-written archive. Afterwards the copy is opened and its sales for the
+   * year counted; a mismatch throws. Writing again replaces that year's files (used after late mail).
+   */
+  exportYear(year: number, folder: string): { folder: string; files: string[]; sales: number; purchases: number } {
+    const { from, to } = yearBounds(year)
+    const names = archiveFiles(year)
+    const rows = this.listEventsAll(['sale', 'purchase'], from, to)
+    const sales = rows.filter((r) => r.kind === 'sale')
+    const s = this.summary(from, to)
+    const byItem = this.db.prepare(`SELECT item_name AS name, COUNT(*) AS sales, SUM(quantity) AS units, SUM(price) AS revenue
+      FROM events WHERE kind='sale' AND ts BETWEEN ? AND ? GROUP BY item_key ORDER BY revenue DESC`).all(from, to) as YearSummary['byItem']
+    const summary: YearSummary = {
+      year, sales: Number(s.totals!.sales), units: Number(s.totals!.units), revenue: Number(s.totals!.revenue), spent: Number(s.spent!.spent),
+      byCharacter: s.byCharacter as unknown as YearSummary['byCharacter'], byVendor: s.byVendor as unknown as YearSummary['byVendor'], byItem
+    }
+
+    mkdirSync(folder, { recursive: true })
+    const put = (name: string, write: (tmp: string) => void) => {
+      const final = join(folder, name)
+      const tmp = final + '.tmp'
+      rmSync(tmp, { force: true })
+      write(tmp)
+      renameSync(tmp, final) // replaces an older copy of the same year
+      return final
+    }
+    const files = [
+      put(names.db, (tmp) => this.db.prepare('VACUUM INTO ?').run(tmp)), // a complete, consistent copy, even while the app runs
+      put(names.sales, (tmp) => writeFileSync(tmp, salesCsv(rows))),
+      put(names.customers, (tmp) => writeFileSync(tmp, customersCsv(this.customerList(from, to)))),
+      put(names.summary, (tmp) => writeFileSync(tmp, summaryCsv(summary)))
+    ]
+
+    // Check the copy really holds the year: same number of sales and purchases as this database.
+    const copy = new DatabaseSync(files[0]!, { readOnly: true })
+    try {
+      const n = (copy.prepare(`SELECT COUNT(*) AS n FROM events WHERE kind IN ('sale','purchase') AND ts BETWEEN ? AND ?`).get(from, to) as { n: number }).n
+      if (n !== rows.length) throw new Error(`The archive copy has ${n} sales and purchases for ${year}, but this database has ${rows.length}.`)
+    } finally {
+      copy.close()
+    }
+    return { folder, files, sales: sales.length, purchases: rows.length - sales.length }
+  }
+
+  /** Every mail row of these kinds in the range, oldest first, with no row limit (the Sales Log stops at 5,000). */
+  private listEventsAll(kinds: string[], from: number, to: number): SaleRow[] {
+    return (this.db.prepare(`SELECT * FROM events WHERE kind IN (${kinds.map(() => '?').join(',')}) AND ts BETWEEN ? AND ? ORDER BY ts, id`)
+      .all(...kinds, from, to) as Record<string, unknown>[]).map(toSaleRow)
+  }
+}
+
+/** One events row as the Sales Log (and the year archive) shows it. */
+function toSaleRow(r: Record<string, unknown>): SaleRow {
+  return {
+    id: r.id as number, character: r.character as string, ts: r.ts as number, kind: r.kind as SaleRow['kind'],
+    vendor: r.vendor as string | null, itemName: r.item_name as string | null, quantity: r.quantity as number,
+    uses: r.uses as number | null, price: r.price as number, counterparty: r.counterparty as string | null, city: r.city as string | null,
+    planet: r.planet as string | null, itemId: r.item_id as number | null
   }
 }
 

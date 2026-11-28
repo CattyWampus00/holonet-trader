@@ -6,12 +6,14 @@ import { needsRestock } from '@shared/stock'
 import { DASHBOARD_HOURS, formatHours, needsAttention, POOL_LABEL, upkeepPerDay } from '@shared/structures'
 import { useNow } from './Structures'
 import { api, credits, type Settings, type Summary, type VendorAlert } from '../api'
+import CloseYearModal from '../components/CloseYear'
 import CharacterSelect from '../components/CharacterSelect'
 import DateRangeBar from '../components/DateRangeBar'
-import { rangeBounds, type RangeValue } from '../dateRange'
+import { clampToYear, rangeBounds, type RangeValue } from '../dateRange'
 import { loadCharacter, loadRange, saveCharacter, saveRange } from '../rangeStore'
+import { closeReminder, lateMailText, type LateMail } from '@shared/yearArchive'
 
-export default function Dashboard({ version, items, settings, characters }: { version: number; items: InventoryItem[]; settings: Settings; characters: CharacterInfo[] }) {
+export default function Dashboard({ version, items, settings, characters, onChange }: { version: number; items: InventoryItem[]; settings: Settings; characters: CharacterInfo[]; onChange: () => void }) {
   const [range, setRange] = useState<RangeValue>(() => loadRange('dashboard'))
   const [character, setCharacter] = useState(loadCharacter)
   const [s, setS] = useState<Summary | null>(null)
@@ -19,10 +21,10 @@ export default function Dashboard({ version, items, settings, characters }: { ve
   const [structures, setStructures] = useState<Structure[]>([])
 
   useEffect(() => {
-    const { from, to } = rangeBounds(range)
+    const { from, to } = clampToYear(rangeBounds(range), settings.salesYearStart)
     api.summary(from, to, characters.some((c) => c.name === character) ? character : undefined).then(setS)
     api.vendorAlerts().then(setAlerts)
-  }, [range, character, characters, version])
+  }, [range, character, characters, version, settings.salesYearStart])
   useEffect(() => {
     api.structures().then(setStructures)
     api.structureMails().then(setMails)
@@ -49,9 +51,71 @@ export default function Dashboard({ version, items, settings, characters }: { ve
   const due = needsAttention(structures, now, DASHBOARD_HOURS)
   const upkeep = upkeepPerDay(structures)
 
+  // Year-end reminder (docs/YEAR_END_PLAN.md): from Dec 26 until the year is closed or put off with "Not now".
+  const [salesYears, setSalesYears] = useState<number[]>([])
+  useEffect(() => { api.salesYears().then(setSalesYears) }, [version])
+  const [closing, setClosing] = useState<number | null>(null)
+  const reminder = closeReminder(new Date(now * 1000), settings.closedYears, settings.closeSnoozed, salesYears)
+
+  // Late mail (Step 4): mail dated in a closed year that arrived after its archive was saved.
+  const [late, setLate] = useState<LateMail[]>([])
+  useEffect(() => { api.lateMail().then(setLate) }, [version, settings.closedYears])
+  const [lateBusy, setLateBusy] = useState<number | null>(null)
+  const [lateOut, setLateOut] = useState<{ year: number; text: string; ok: boolean } | null>(null)
+  const updateArchive = async (year: number) => {
+    setLateBusy(year)
+    const r = await api.updateArchive(year)
+    setLateBusy(null)
+    if (!r) return // folder picker cancelled
+    setLateOut('error' in r
+      ? { year, text: r.error, ok: false }
+      : { year, text: `The ${year} archive is up to date. It holds ${lateMailText({ year, ...r }) || 'no sales'}.`, ok: true })
+    setLate(await api.lateMail())
+  }
+
   return (
     <>
       <h2>Dashboard</h2>
+      {reminder && (
+        <div className={'banner row' + (reminder.level === 'due' ? '' : ' quiet')} style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 12 }}>
+          <span>
+            {reminder.level === 'due'
+              ? <><b>{reminder.year} is ending.</b> Close the financial year once your last December mail is saved. The Dashboard, Sales Log and Customers then start fresh; nothing is deleted.</>
+              : <>The {reminder.year} financial year is still open, so this year's totals include it. Close it when you're ready.</>}
+          </span>
+          <span className="row" style={{ flexWrap: 'nowrap', gap: 8, whiteSpace: 'nowrap' }}>
+            <button className="btn" onClick={() => setClosing(reminder.year)}>Close {reminder.year}…</button>
+            <button className="btn ghost" title="Hide this reminder for this year (you can still close it in Settings)" onClick={async () => { await api.snoozeClose(reminder.year); onChange() }}>Not now</button>
+          </span>
+        </div>
+      )}
+      {late.map((m) => (
+        <div key={m.year} className="banner row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 12 }}>
+          <span>
+            <b>{lateMailText(m)} from {m.year} arrived after you closed the year.</b>{' '}
+            {m.sales + m.purchases === 1
+              ? <>It counts in {m.year} (not this year) and shows on Prices, but the {m.year} archive doesn't have it yet.</>
+              : <>They count in {m.year} (not this year) and show on Prices, but the {m.year} archive doesn't have them yet.</>}
+          </span>
+          <span className="row" style={{ flexWrap: 'nowrap', gap: 8, whiteSpace: 'nowrap' }}>
+            <button className="btn" disabled={lateBusy != null} onClick={() => updateArchive(m.year)}>
+              {lateBusy === m.year ? 'Updating…' : `Update ${m.year} archive`}
+            </button>
+            <button className="btn ghost" disabled={lateBusy != null} title="Hide this until more mail from that year arrives"
+              onClick={async () => { await api.dismissLateMail(m.year); setLate(await api.lateMail()) }}>Not now</button>
+          </span>
+        </div>
+      ))}
+      {lateOut && (
+        <div className={'banner row' + (lateOut.ok ? ' quiet' : ' bad')} style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 12 }}>
+          <span>{lateOut.text}</span>
+          <span className="row" style={{ flexWrap: 'nowrap', gap: 8, whiteSpace: 'nowrap' }}>
+            {lateOut.ok && <button className="btn ghost" onClick={() => api.openArchiveFolder()}>Open folder</button>}
+            <button className="btn ghost" onClick={() => setLateOut(null)}>Dismiss</button>
+          </span>
+        </div>
+      )}
+      {closing != null && <CloseYearModal year={closing} onClose={() => setClosing(null)} onDone={onChange} />}
       {low.length > 0 && (
         <div className="banner bad">
           <b>Restock needed</b> <span className="muted">({low.length} items, number on hand)</span>
@@ -94,7 +158,7 @@ export default function Dashboard({ version, items, settings, characters }: { ve
         )
       })()}
       <div className="filters">
-        <DateRangeBar value={range} onChange={(v) => { setRange(v); saveRange('dashboard', v) }} />
+        <DateRangeBar value={range} yearStart={settings.salesYearStart} onChange={(v) => { setRange(v); saveRange('dashboard', v) }} />
         <CharacterSelect characters={characters} value={character} onChange={(c) => { setCharacter(c); saveCharacter(c) }} />
       </div>
       {s && t && (

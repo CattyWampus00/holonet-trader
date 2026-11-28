@@ -1,36 +1,32 @@
 import { useEffect, useState } from 'react'
 import { cleanItemName } from '@shared/mailParser'
+import { EVENT_LABEL as KINDS, salesCsv } from '@shared/yearArchive'
 import type { CharacterInfo, SaleRow } from '@shared/types'
 import { api, credits, dateTime } from '../api'
 import CharacterSelect from '../components/CharacterSelect'
 import DateRangeBar from '../components/DateRangeBar'
-import { rangeBounds, type RangeValue } from '../dateRange'
+import YearSelect, { usePastYears } from '../components/YearSelect'
+import { viewBounds, type RangeValue } from '../dateRange'
 import { loadCharacter, loadRange, saveCharacter, saveRange } from '../rangeStore'
 
-const KINDS: Record<string, string> = { sale: 'Sold', purchase: 'Bought', unsold: 'Unsold', expired: 'Expired', offer_in: 'Offer received', offer_out: 'Offer made' }
-
-function toCsv(rows: SaleRow[]): string {
-  const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-  const head = ['Date', 'Character', 'Type', 'Vendor', 'Item', 'Qty', 'Uses', 'Credits', 'Buyer/Seller', 'City', 'Planet']
-  const lines = rows.map((r) => [dateTime(r.ts), r.character, KINDS[r.kind] ?? r.kind, r.vendor, r.itemName ? cleanItemName(r.itemName) : '', r.quantity, r.uses, r.price, r.counterparty, r.city, r.planet].map(esc).join(','))
-  return [head.join(','), ...lines].join('\r\n')
-}
-
-export default function Sales({ version, characters }: { version: number; characters: CharacterInfo[] }) {
+export default function Sales({ version, characters, yearStart = null }: { version: number; characters: CharacterInfo[]; yearStart?: number | null }) {
   const [rows, setRows] = useState<SaleRow[]>([])
   const [kind, setKind] = useState('sale')
   const [search, setSearch] = useState('')
   const [range, setRange] = useState<RangeValue>(() => loadRange('sales'))
   const [character, setCharacter] = useState(loadCharacter)
+  const years = usePastYears(version, yearStart)
+  const [year, setYear] = useState<number | null>(null) // a closed year to look back at; null = the current year
+  const viewYear = year != null && years.includes(year) ? year : null
 
   useEffect(() => {
-    const { from, to } = rangeBounds(range)
+    const { from, to } = viewBounds(range, yearStart, viewYear)
     const t = setTimeout(() => api.events({ kinds: kind === 'all' ? Object.keys(KINDS) : [kind], search: search || undefined, from: from || undefined, to, character: characters.some((c) => c.name === character) ? character : undefined, limit: 2000 }).then(setRows), 200)
     return () => clearTimeout(t)
-  }, [kind, search, range, character, characters, version])
+  }, [kind, search, range, character, characters, version, yearStart, viewYear])
 
   const exportCsv = () => {
-    const url = URL.createObjectURL(new Blob([toCsv(rows)], { type: 'text/csv' }))
+    const url = URL.createObjectURL(new Blob([salesCsv(rows, dateTime)], { type: 'text/csv' }))
     const a = document.createElement('a')
     a.href = url
     a.download = 'holonet-trader-sales.csv'
@@ -42,7 +38,10 @@ export default function Sales({ version, characters }: { version: number; charac
     <>
       <h2>Sales Log</h2>
       <div className="filters">
-        <DateRangeBar value={range} onChange={(v) => { setRange(v); saveRange('sales', v) }} />
+        <YearSelect years={years} value={viewYear} yearStart={yearStart} onChange={setYear} />
+        {viewYear == null
+          ? <DateRangeBar value={range} yearStart={yearStart} onChange={(v) => { setRange(v); saveRange('sales', v) }} />
+          : <span className="muted">All of {viewYear}, a closed year. Its full list is in the archive's Sales-{viewYear}.csv.</span>}
         <CharacterSelect characters={characters} value={character} onChange={(c) => { setCharacter(c); saveCharacter(c) }} />
       </div>
       <div className="row">

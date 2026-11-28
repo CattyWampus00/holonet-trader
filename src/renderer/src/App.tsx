@@ -62,10 +62,10 @@ export default function App() {
             <button className="btn" onClick={() => setTab('settings')}>Set up now</button>
           </div>
         )}
-        {tab === 'dashboard' && <Dashboard version={version} items={items} settings={settings} characters={settings.location?.characters ?? []} />}
-        {tab === 'sales' && <Sales version={version} characters={settings.location?.characters ?? []} />}
+        {tab === 'dashboard' && <Dashboard version={version} items={items} settings={settings} characters={settings.location?.characters ?? []} onChange={reload} />}
+        {tab === 'sales' && <Sales version={version} yearStart={settings.salesYearStart} characters={settings.location?.characters ?? []} />}
         {tab === 'prices' && <Prices version={version} characters={settings.location?.characters ?? []} />}
-        {tab === 'customers' && <Customers version={version} characters={settings.location?.characters ?? []} />}
+        {tab === 'customers' && <Customers version={version} yearStart={settings.salesYearStart} characters={settings.location?.characters ?? []} />}
         {tab === 'inventory' && <Inventory version={version} items={items} settings={settings} onChange={reload} />}
         {tab === 'structures' && <Structures version={version} characters={(settings.location?.characters ?? []).map((c) => c.name)} onChange={reload} />}
         {tab === 'settings' && <SettingsPage settings={settings} onChange={reload} />}

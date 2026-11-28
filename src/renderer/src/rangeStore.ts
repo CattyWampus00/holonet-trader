@@ -8,7 +8,7 @@ export function loadRange(screen: string): RangeValue {
     const raw = localStorage.getItem(`holonet-range-${screen}`)
     if (raw) {
       const v = JSON.parse(raw) as RangeValue
-      if (['today', '7', '30', '90', 'all', 'custom'].includes(v.preset)) return { preset: v.preset, from: v.from ?? '', to: v.to ?? '' }
+      if (['today', '7', '30', '90', 'year', 'all', 'custom'].includes(v.preset)) return { preset: v.preset, from: v.from ?? '', to: v.to ?? '' }
     }
   } catch { /* storage unavailable or corrupt: use default */ }
   return DEFAULT

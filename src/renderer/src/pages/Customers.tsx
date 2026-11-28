@@ -3,7 +3,8 @@ import type { CharacterInfo, CustomerRow } from '@shared/types'
 import { api, credits, dateTime } from '../api'
 import CharacterSelect from '../components/CharacterSelect'
 import DateRangeBar from '../components/DateRangeBar'
-import { rangeBounds, type RangeValue } from '../dateRange'
+import YearSelect, { usePastYears } from '../components/YearSelect'
+import { viewBounds, type RangeValue } from '../dateRange'
 import { loadCharacter, loadRange, saveCharacter, saveRange } from '../rangeStore'
 
 type SortKey = 'name' | 'credits' | 'purchases' | 'items' | 'lastTs'
@@ -17,18 +18,22 @@ const COLUMNS: { key: SortKey; label: string; num?: boolean }[] = [
   { key: 'lastTs', label: 'Last bought', num: true }
 ]
 
-export default function Customers({ version, characters }: { version: number; characters: CharacterInfo[] }) {
+export default function Customers({ version, characters, yearStart = null }: { version: number; characters: CharacterInfo[]; yearStart?: number | null }) {
   const [range, setRange] = useState<RangeValue>(() => loadRange('customers'))
   const [character, setCharacter] = useState(loadCharacter)
   const [rows, setRows] = useState<CustomerRow[] | null>(null)
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: 'credits', dir: 'desc' })
 
+  const years = usePastYears(version, yearStart)
+  const [year, setYear] = useState<number | null>(null) // a closed year to look back at; null = the current year
+  const viewYear = year != null && years.includes(year) ? year : null
+
   useEffect(() => {
-    const { from, to } = rangeBounds(range)
+    const { from, to } = viewBounds(range, yearStart, viewYear)
     const ch = characters.some((c) => c.name === character) ? character : undefined
     api.customerList(from, to, ch).then(setRows)
-  }, [range, character, characters, version])
+  }, [range, character, characters, version, yearStart, viewYear])
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -48,7 +53,10 @@ export default function Customers({ version, characters }: { version: number; ch
     <>
       <h2>Customers</h2>
       <div className="filters">
-        <DateRangeBar value={range} onChange={(v) => { setRange(v); saveRange('customers', v) }} />
+        <YearSelect years={years} value={viewYear} yearStart={yearStart} onChange={setYear} />
+        {viewYear == null
+          ? <DateRangeBar value={range} yearStart={yearStart} onChange={(v) => { setRange(v); saveRange('customers', v) }} />
+          : <span className="muted">All of {viewYear}, a closed year.</span>}
         <CharacterSelect characters={characters} value={character} onChange={(c) => { setCharacter(c); saveCharacter(c) }} />
       </div>
       <div className="row">
@@ -83,7 +91,7 @@ export default function Customers({ version, characters }: { version: number; ch
               </tr>
             ))}
             {rows && shown.length === 0 && (
-              <tr><td colSpan={COLUMNS.length} className="muted">No customers in this date range{character ? ` for ${character}` : ''}.</td></tr>
+              <tr><td colSpan={COLUMNS.length} className="muted">No customers in {viewYear ?? 'this date range'}{character ? ` for ${character}` : ''}.</td></tr>
             )}
           </tbody>
         </table>
