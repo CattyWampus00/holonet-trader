@@ -16,6 +16,8 @@ export default function Inventory({ version, items, settings, onChange }: Props)
   const [filter, setFilter] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [showIgnored, setShowIgnored] = useState(false)
+  // The name just ignored, for a one-click Undo next to the list (misclicks in the Link to menu are easy).
+  const [lastIgnored, setLastIgnored] = useState<{ key: string; name: string } | null>(null)
 
   useEffect(() => {
     api.unmatched().then(setUnmatched)
@@ -118,7 +120,14 @@ export default function Inventory({ version, items, settings, onChange }: Props)
         <p className="muted" style={{ marginTop: 0 }}>
           Link a sale name to an item once and HoloNet Trader remembers it, so future sales reduce stock automatically.
           Names that match an item exactly are linked without asking.
+          {ignored.length > 0 && <> Ignored a name by mistake? <a href="#ignored-names" onClick={() => setShowIgnored(true)}>See ignored names ({ignored.length})</a>.</>}
         </p>
+        {lastIgnored && (
+          <div className="banner row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap', gap: 12 }}>
+            <span>Ignored “{cleanItemName(lastIgnored.name)}”. Its sales no longer show here.</span>
+            <button className="btn ghost" onClick={async () => { await api.unignoreName(lastIgnored.key); setLastIgnored(null); onChange() }}>Undo</button>
+          </div>
+        )}
         <table>
           <thead><tr><th>Name in sale mails</th><th className="num">Sales</th><th className="num">Units</th><th>Link to</th></tr></thead>
           <tbody>
@@ -128,7 +137,7 @@ export default function Inventory({ version, items, settings, onChange }: Props)
                 <td>
                   <select value="" onChange={async (e) => {
                     if (e.target.value === 'new') setEditing({ ...blank, name: newItemName(u.name, u.key) })
-                    else if (e.target.value === 'ignore') { await api.ignoreName(u.key); onChange() }
+                    else if (e.target.value === 'ignore') { await api.ignoreName(u.key); setLastIgnored({ key: u.key, name: u.name }); onChange() }
                     else if (e.target.value) { await api.linkAlias(u.key, Number(e.target.value)); onChange() }
                   }}>
                     <option value="">Choose…</option>
@@ -145,7 +154,7 @@ export default function Inventory({ version, items, settings, onChange }: Props)
 
       {ignored.length > 0 && <>
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h3>Ignored sale names ({ignored.length})</h3>
+          <h3 id="ignored-names">Ignored sale names ({ignored.length})</h3>
           <button className="btn ghost" onClick={() => setShowIgnored(!showIgnored)}>{showIgnored ? 'Hide' : 'Show'}</button>
         </div>
         {showIgnored && (
